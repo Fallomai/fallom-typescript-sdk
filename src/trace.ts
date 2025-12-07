@@ -16,6 +16,7 @@ import { Context } from "@opentelemetry/api";
 interface SessionContext {
   configKey: string;
   sessionId: string;
+  customerId?: string;
 }
 
 const sessionStorage = new AsyncLocalStorage<SessionContext>();
@@ -50,7 +51,15 @@ const fallomSpanProcessor = {
     if (ctx) {
       span.setAttribute("fallom.config_key", ctx.configKey);
       span.setAttribute("fallom.session_id", ctx.sessionId);
-      log("   Added session context:", ctx.configKey, ctx.sessionId);
+      if (ctx.customerId) {
+        span.setAttribute("fallom.customer_id", ctx.customerId);
+      }
+      log(
+        "   Added session context:",
+        ctx.configKey,
+        ctx.sessionId,
+        ctx.customerId
+      );
     } else {
       log("   No session context available");
     }
@@ -253,28 +262,34 @@ async function tryAddInstrumentation(
  * Set the current session context.
  *
  * All subsequent LLM calls in this async context will be
- * automatically tagged with this configKey and sessionId.
+ * automatically tagged with this configKey, sessionId, and customerId.
  *
  * @param configKey - Your config name (e.g., "linkedin-agent")
  * @param sessionId - Your session/conversation ID
+ * @param customerId - Optional customer/user identifier for analytics
  *
  * @example
  * ```typescript
- * trace.setSession("linkedin-agent", sessionId);
- * await agent.run(message); // Automatically traced with session
+ * trace.setSession("linkedin-agent", sessionId, "user_123");
+ * await agent.run(message); // Automatically traced with session + customer
  * ```
  */
-export function setSession(configKey: string, sessionId: string): void {
+export function setSession(
+  configKey: string,
+  sessionId: string,
+  customerId?: string
+): void {
   // Try to update AsyncLocalStorage if we're inside runWithSession
   const store = sessionStorage.getStore();
   if (store) {
     store.configKey = configKey;
     store.sessionId = sessionId;
+    store.customerId = customerId;
   }
 
   // Also set module-level fallback (mimics Python's contextvars behavior)
   // This ensures setSession works even without runWithSession for simple cases
-  fallbackSession = { configKey, sessionId };
+  fallbackSession = { configKey, sessionId, customerId };
 }
 
 /**
@@ -283,11 +298,12 @@ export function setSession(configKey: string, sessionId: string): void {
  *
  * @param configKey - Your config name
  * @param sessionId - Your session ID
+ * @param customerId - Optional customer/user identifier
  * @param fn - Function to run with session context
  *
  * @example
  * ```typescript
- * await trace.runWithSession("my-agent", sessionId, async () => {
+ * await trace.runWithSession("my-agent", sessionId, "user_123", async () => {
  *   await agent.run(message); // Has session context
  * });
  * ```
@@ -295,9 +311,17 @@ export function setSession(configKey: string, sessionId: string): void {
 export function runWithSession<T>(
   configKey: string,
   sessionId: string,
-  fn: () => T
+  customerIdOrFn: string | (() => T),
+  fn?: () => T
 ): T {
-  return sessionStorage.run({ configKey, sessionId }, fn);
+  // Support both (configKey, sessionId, fn) and (configKey, sessionId, customerId, fn)
+  if (typeof customerIdOrFn === "function") {
+    return sessionStorage.run({ configKey, sessionId }, customerIdOrFn);
+  }
+  return sessionStorage.run(
+    { configKey, sessionId, customerId: customerIdOrFn },
+    fn!
+  );
 }
 
 /**
@@ -414,6 +438,7 @@ export async function shutdown(): Promise<void> {
 interface TraceData {
   config_key: string;
   session_id: string;
+  customer_id?: string;
   name: string;
   model?: string;
   start_time: string;
@@ -476,7 +501,7 @@ async function sendTrace(trace: TraceData): Promise<void> {
 export function wrapOpenAI<
   T extends {
     chat: { completions: { create: (...args: any[]) => Promise<any> } };
-  }
+  },
 >(client: T): T {
   const originalCreate = client.chat.completions.create.bind(
     client.chat.completions
@@ -512,6 +537,7 @@ export function wrapOpenAI<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "chat.completions.create",
         model: response?.model || params?.model,
         start_time: new Date(startTime).toISOString(),
@@ -538,6 +564,7 @@ export function wrapOpenAI<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "chat.completions.create",
         model: params?.model,
         start_time: new Date(startTime).toISOString(),
@@ -576,7 +603,7 @@ export function wrapOpenAI<
  * ```
  */
 export function wrapAnthropic<
-  T extends { messages: { create: (...args: any[]) => Promise<any> } }
+  T extends { messages: { create: (...args: any[]) => Promise<any> } },
 >(client: T): T {
   const originalCreate = client.messages.create.bind(client.messages);
 
@@ -610,6 +637,7 @@ export function wrapAnthropic<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "messages.create",
         model: response?.model || params?.model,
         start_time: new Date(startTime).toISOString(),
@@ -636,6 +664,7 @@ export function wrapAnthropic<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "messages.create",
         model: params?.model,
         start_time: new Date(startTime).toISOString(),
@@ -675,7 +704,7 @@ export function wrapAnthropic<
  * ```
  */
 export function wrapGoogleAI<
-  T extends { generateContent: (...args: any[]) => Promise<any> }
+  T extends { generateContent: (...args: any[]) => Promise<any> },
 >(model: T): T {
   const originalGenerate = model.generateContent.bind(model);
 
@@ -711,6 +740,7 @@ export function wrapGoogleAI<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "generateContent",
         model: (model as any)?.model || "gemini",
         start_time: new Date(startTime).toISOString(),
@@ -735,6 +765,7 @@ export function wrapGoogleAI<
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
         name: "generateContent",
         model: (model as any)?.model || "gemini",
         start_time: new Date(startTime).toISOString(),
