@@ -388,6 +388,15 @@ export async function getAB(
 
   const { variants } = versionData;
 
+  log(`A/B test '${abTestKey}' has ${variants?.length ?? 0} variants`);
+  log(`Version data: ${JSON.stringify(versionData, null, 2)}`);
+
+  if (!variants || variants.length === 0) {
+    throw new Error(
+      `Prompt A/B test '${abTestKey}' has no variants configured.`
+    );
+  }
+
   // Deterministic assignment from sessionId hash
   const hashBytes = createHash("md5").update(sessionId).digest();
   const hashVal = hashBytes.readUInt32BE(0) % 1_000_000;

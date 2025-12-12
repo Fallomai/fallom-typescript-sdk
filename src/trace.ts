@@ -454,6 +454,8 @@ interface TraceData {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  time_to_first_token_ms?: number;
+  is_streaming?: boolean;
   // OTEL-format attributes (matches Python SDK)
   attributes?: Record<string, unknown>;
   // Prompt context fields
@@ -469,10 +471,10 @@ interface TraceData {
  */
 function messagesToOtelAttributes(
   messages:
-    | Array<{ role: string; content: string; tool_calls?: unknown[] }>
+    | Array<{ role: string; content: string | unknown[]; tool_calls?: unknown[] }>
     | undefined,
   completion:
-    | { role: string; content: string; tool_calls?: unknown[] }
+    | { role: string; content: string | unknown[] | null; tool_calls?: unknown[] }
     | undefined,
   model: string | undefined,
   responseId: string | undefined
@@ -494,14 +496,22 @@ function messagesToOtelAttributes(
   if (messages) {
     messages.forEach((msg, i) => {
       attrs[`gen_ai.prompt.${i}.role`] = msg.role;
-      attrs[`gen_ai.prompt.${i}.content`] = msg.content;
+      // Handle multimodal content (arrays) by JSON.stringify-ing
+      attrs[`gen_ai.prompt.${i}.content`] =
+        typeof msg.content === "string"
+          ? msg.content
+          : JSON.stringify(msg.content);
     });
   }
 
   // Completion (output)
   if (completion) {
     attrs["gen_ai.completion.0.role"] = completion.role;
-    attrs["gen_ai.completion.0.content"] = completion.content;
+    // Handle multimodal content in completions
+    attrs["gen_ai.completion.0.content"] =
+      typeof completion.content === "string"
+        ? completion.content
+        : JSON.stringify(completion.content);
     if (completion.tool_calls) {
       attrs["gen_ai.completion.0.tool_calls"] = JSON.stringify(
         completion.tool_calls
@@ -534,11 +544,15 @@ const traceContextStorage = new AsyncLocalStorage<TraceContext>();
 let fallbackTraceContext: TraceContext | null = null;
 
 async function sendTrace(trace: TraceData): Promise<void> {
+  const url = `${baseUrl}/v1/traces`;
+  log("📤 Sending trace to:", url);
+  log("   Session:", trace.session_id, "Config:", trace.config_key);
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-    await fetch(`${baseUrl}/v1/traces`, {
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -549,9 +563,15 @@ async function sendTrace(trace: TraceData): Promise<void> {
     });
 
     clearTimeout(timeoutId);
-    log("📤 Trace sent:", trace.name, trace.model);
-  } catch {
-    // Fail silently
+
+    if (!response.ok) {
+      const text = await response.text();
+      log("❌ Trace send failed:", response.status, text);
+    } else {
+      log("✅ Trace sent:", trace.name, trace.model);
+    }
+  } catch (err) {
+    log("❌ Trace send error:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -989,4 +1009,573 @@ export function wrapGoogleAI<
   } as typeof model.generateContent;
 
   return model;
+}
+
+// ============================================================================
+// Vercel AI SDK Wrapper
+// ============================================================================
+
+/**
+ * Wrap the Vercel AI SDK to automatically trace all LLM calls.
+ * Works with generateText, streamText, generateObject, streamObject.
+ *
+ * @param ai - The ai module (import * as ai from "ai")
+ * @returns Object with wrapped generateText, streamText, generateObject, streamObject
+ *
+ * @example
+ * ```typescript
+ * import * as ai from "ai";
+ * import { createOpenAI } from "@ai-sdk/openai";
+ * import { trace } from "@fallom/trace";
+ *
+ * await trace.init({ apiKey: process.env.FALLOM_API_KEY });
+ * const { generateText, streamText } = trace.wrapAISDK(ai);
+ *
+ * const openrouter = createOpenAI({
+ *   apiKey: process.env.OPENROUTER_API_KEY,
+ *   baseURL: "https://openrouter.ai/api/v1",
+ * });
+ *
+ * trace.setSession("my-config", sessionId);
+ * const { text } = await generateText({
+ *   model: openrouter("openai/gpt-4o-mini"),
+ *   prompt: "Hello!",
+ * }); // Automatically traced!
+ * ```
+ */
+export function wrapAISDK<
+  T extends {
+    generateText: (...args: any[]) => Promise<any>;
+    streamText: (...args: any[]) => any;
+    generateObject?: (...args: any[]) => Promise<any>;
+    streamObject?: (...args: any[]) => any;
+  }
+>(
+  ai: T
+): {
+  generateText: T["generateText"];
+  streamText: T["streamText"];
+  generateObject: T["generateObject"];
+  streamObject: T["streamObject"];
+} {
+  // Store reference to the module to preserve function bindings
+  const aiModule = ai;
+
+  return {
+    generateText: createGenerateTextWrapper(aiModule),
+    streamText: createStreamTextWrapper(aiModule),
+    generateObject: aiModule.generateObject
+      ? createGenerateObjectWrapper(aiModule)
+      : undefined,
+    streamObject: aiModule.streamObject
+      ? createStreamObjectWrapper(aiModule)
+      : undefined,
+  } as any;
+}
+
+// Wrapper factory that preserves module context
+function createGenerateTextWrapper(aiModule: any) {
+  return async (...args: any[]) => {
+    const ctx = sessionStorage.getStore() || fallbackSession;
+    if (!ctx || !initialized) {
+      return aiModule.generateText(...args);
+    }
+
+    // Get prompt context
+    let promptCtx: {
+      promptKey: string;
+      promptVersion: number;
+      abTestKey?: string;
+      variantIndex?: number;
+    } | null = null;
+    try {
+      const { getPromptContext } = await import("./prompts");
+      promptCtx = getPromptContext();
+    } catch {
+      // prompts module not available
+    }
+
+    const traceCtx = traceContextStorage.getStore() || fallbackTraceContext;
+    const traceId = traceCtx?.traceId || generateHexId(32);
+    const spanId = generateHexId(16);
+    const parentSpanId = traceCtx?.parentSpanId;
+
+    const params = args[0] || {};
+    const startTime = Date.now();
+
+    try {
+      const result = await aiModule.generateText(...args);
+      const endTime = Date.now();
+
+      // Extract model info from the result or params
+      const modelId =
+        result?.response?.modelId ||
+        params?.model?.modelId ||
+        String(params?.model || "unknown");
+
+      // Build attributes
+      const attributes: Record<string, unknown> = {};
+      if (captureContent) {
+        attributes["gen_ai.request.model"] = modelId;
+        attributes["gen_ai.response.model"] = modelId;
+        if (params?.prompt) {
+          attributes["gen_ai.prompt.0.role"] = "user";
+          attributes["gen_ai.prompt.0.content"] = params.prompt;
+        }
+        if (params?.messages) {
+          params.messages.forEach((msg: any, i: number) => {
+            attributes[`gen_ai.prompt.${i}.role`] = msg.role;
+            attributes[`gen_ai.prompt.${i}.content`] =
+              typeof msg.content === "string"
+                ? msg.content
+                : JSON.stringify(msg.content);
+          });
+        }
+        if (result?.text) {
+          attributes["gen_ai.completion.0.role"] = "assistant";
+          attributes["gen_ai.completion.0.content"] = result.text;
+        }
+        if (result?.response?.id) {
+          attributes["gen_ai.response.id"] = result.response.id;
+        }
+      }
+
+      sendTrace({
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        parent_span_id: parentSpanId,
+        name: "generateText",
+        kind: "llm",
+        model: modelId,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "OK",
+        prompt_tokens: result?.usage?.promptTokens,
+        completion_tokens: result?.usage?.completionTokens,
+        total_tokens: result?.usage?.totalTokens,
+        attributes: captureContent ? attributes : undefined,
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      }).catch(() => {});
+
+      return result;
+    } catch (error: any) {
+      const endTime = Date.now();
+      const modelId =
+        params?.model?.modelId || String(params?.model || "unknown");
+
+      sendTrace({
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        parent_span_id: parentSpanId,
+        name: "generateText",
+        kind: "llm",
+        model: modelId,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "ERROR",
+        error_message: error?.message,
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      }).catch(() => {});
+
+      throw error;
+    }
+  };
+}
+
+function createStreamTextWrapper(aiModule: any) {
+  return async (...args: any[]) => {
+    const ctx = sessionStorage.getStore() || fallbackSession;
+    const params = args[0] || {};
+    const startTime = Date.now();
+
+    // Call the original function and await the result (Vercel AI SDK v4+ returns a Promise)
+    const result = await aiModule.streamText(...args);
+
+    if (!ctx || !initialized) {
+      return result;
+    }
+
+    const traceCtx = traceContextStorage.getStore() || fallbackTraceContext;
+    const traceId = traceCtx?.traceId || generateHexId(32);
+    const spanId = generateHexId(16);
+    const parentSpanId = traceCtx?.parentSpanId;
+
+    let firstTokenTime: number | null = null;
+    const modelId =
+      params?.model?.modelId || String(params?.model || "unknown");
+
+    let promptCtx: {
+      promptKey: string;
+      promptVersion: number;
+      abTestKey?: string;
+      variantIndex?: number;
+    } | null = null;
+
+    // Get prompt context if available
+    try {
+      const { getPromptContext } = await import("./prompts");
+      promptCtx = getPromptContext();
+    } catch {
+      // prompts module not available
+    }
+
+    // Hook into the usage promise to capture when stream completes
+    if (result?.usage) {
+      result.usage
+        .then((usage: any) => {
+          const endTime = Date.now();
+
+          log("📊 streamText usage:", JSON.stringify(usage, null, 2));
+
+          const attributes: Record<string, unknown> = {};
+          if (captureContent) {
+            attributes["gen_ai.request.model"] = modelId;
+            if (params?.prompt) {
+              attributes["gen_ai.prompt.0.role"] = "user";
+              attributes["gen_ai.prompt.0.content"] = params.prompt;
+            }
+          }
+
+          if (firstTokenTime) {
+            attributes["gen_ai.time_to_first_token_ms"] =
+              firstTokenTime - startTime;
+          }
+
+          const tracePayload: TraceData = {
+            config_key: ctx.configKey,
+            session_id: ctx.sessionId,
+            customer_id: ctx.customerId,
+            trace_id: traceId,
+            span_id: spanId,
+            parent_span_id: parentSpanId,
+            name: "streamText",
+            kind: "llm",
+            model: modelId,
+            start_time: new Date(startTime).toISOString(),
+            end_time: new Date(endTime).toISOString(),
+            duration_ms: endTime - startTime,
+            status: "OK",
+            prompt_tokens: usage?.promptTokens,
+            completion_tokens: usage?.completionTokens,
+            total_tokens: usage?.totalTokens,
+            time_to_first_token_ms: firstTokenTime
+              ? firstTokenTime - startTime
+              : undefined,
+            attributes: captureContent ? attributes : undefined,
+            prompt_key: promptCtx?.promptKey,
+            prompt_version: promptCtx?.promptVersion,
+            prompt_ab_test_key: promptCtx?.abTestKey,
+            prompt_variant_index: promptCtx?.variantIndex,
+          };
+
+          sendTrace(tracePayload).catch(() => {});
+        })
+        .catch((error: any) => {
+          const endTime = Date.now();
+          log("❌ streamText error:", error?.message);
+
+          sendTrace({
+            config_key: ctx.configKey,
+            session_id: ctx.sessionId,
+            customer_id: ctx.customerId,
+            trace_id: traceId,
+            span_id: spanId,
+            parent_span_id: parentSpanId,
+            name: "streamText",
+            kind: "llm",
+            model: modelId,
+            start_time: new Date(startTime).toISOString(),
+            end_time: new Date(endTime).toISOString(),
+            duration_ms: endTime - startTime,
+            status: "ERROR",
+            error_message: error?.message,
+            prompt_key: promptCtx?.promptKey,
+            prompt_version: promptCtx?.promptVersion,
+            prompt_ab_test_key: promptCtx?.abTestKey,
+            prompt_variant_index: promptCtx?.variantIndex,
+          }).catch(() => {});
+        });
+    }
+
+    // Create a wrapped textStream that captures first token time
+    // We need to use a Proxy since textStream is a getter-only property
+    if (result?.textStream) {
+      const originalTextStream = result.textStream;
+      const wrappedTextStream = (async function* () {
+        for await (const chunk of originalTextStream) {
+          if (!firstTokenTime) {
+            firstTokenTime = Date.now();
+            log("⏱️ Time to first token:", firstTokenTime - startTime, "ms");
+          }
+          yield chunk;
+        }
+      })();
+
+      // Return a proxy that intercepts textStream access
+      return new Proxy(result, {
+        get(target, prop) {
+          if (prop === "textStream") {
+            return wrappedTextStream;
+          }
+          return (target as any)[prop];
+        },
+      });
+    }
+
+    return result;
+  };
+}
+
+function createGenerateObjectWrapper(aiModule: any) {
+  return async (...args: any[]) => {
+    const ctx = sessionStorage.getStore() || fallbackSession;
+    if (!ctx || !initialized) {
+      return aiModule.generateObject(...args);
+    }
+
+    let promptCtx: {
+      promptKey: string;
+      promptVersion: number;
+      abTestKey?: string;
+      variantIndex?: number;
+    } | null = null;
+    try {
+      const { getPromptContext } = await import("./prompts");
+      promptCtx = getPromptContext();
+    } catch {
+      // prompts module not available
+    }
+
+    const traceCtx = traceContextStorage.getStore() || fallbackTraceContext;
+    const traceId = traceCtx?.traceId || generateHexId(32);
+    const spanId = generateHexId(16);
+    const parentSpanId = traceCtx?.parentSpanId;
+
+    const params = args[0] || {};
+    const startTime = Date.now();
+
+    try {
+      const result = await aiModule.generateObject(...args);
+      const endTime = Date.now();
+
+      const modelId =
+        result?.response?.modelId ||
+        params?.model?.modelId ||
+        String(params?.model || "unknown");
+
+      const attributes: Record<string, unknown> = {};
+      if (captureContent) {
+        attributes["gen_ai.request.model"] = modelId;
+        attributes["gen_ai.response.model"] = modelId;
+        if (result?.object) {
+          attributes["gen_ai.completion.0.role"] = "assistant";
+          attributes["gen_ai.completion.0.content"] = JSON.stringify(
+            result.object
+          );
+        }
+      }
+
+      sendTrace({
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        parent_span_id: parentSpanId,
+        name: "generateObject",
+        kind: "llm",
+        model: modelId,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "OK",
+        prompt_tokens: result?.usage?.promptTokens,
+        completion_tokens: result?.usage?.completionTokens,
+        total_tokens: result?.usage?.totalTokens,
+        attributes: captureContent ? attributes : undefined,
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      }).catch(() => {});
+
+      return result;
+    } catch (error: any) {
+      const endTime = Date.now();
+      const modelId =
+        params?.model?.modelId || String(params?.model || "unknown");
+
+      sendTrace({
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        parent_span_id: parentSpanId,
+        name: "generateObject",
+        kind: "llm",
+        model: modelId,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "ERROR",
+        error_message: error?.message,
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      }).catch(() => {});
+
+      throw error;
+    }
+  };
+}
+
+function createStreamObjectWrapper(aiModule: any) {
+  return async (...args: any[]) => {
+    const ctx = sessionStorage.getStore() || fallbackSession;
+    const params = args[0] || {};
+    const startTime = Date.now();
+
+    // Call the original function and await the result (Vercel AI SDK v4+ returns a Promise)
+    const result = await aiModule.streamObject(...args);
+
+    log("🔍 streamObject result keys:", Object.keys(result || {}));
+
+    if (!ctx || !initialized) {
+      return result;
+    }
+
+    const traceCtx = traceContextStorage.getStore() || fallbackTraceContext;
+    const traceId = traceCtx?.traceId || generateHexId(32);
+    const spanId = generateHexId(16);
+    const parentSpanId = traceCtx?.parentSpanId;
+
+    let firstTokenTime: number | null = null;
+    const modelId =
+      params?.model?.modelId || String(params?.model || "unknown");
+
+    let promptCtx: {
+      promptKey: string;
+      promptVersion: number;
+      abTestKey?: string;
+      variantIndex?: number;
+    } | null = null;
+
+    // Get prompt context if available
+    try {
+      const { getPromptContext } = await import("./prompts");
+      promptCtx = getPromptContext();
+    } catch {
+      // prompts module not available
+    }
+
+    // Hook into usage promise for completion
+    if (result?.usage) {
+      result.usage
+        .then((usage: any) => {
+          const endTime = Date.now();
+
+          log("📊 streamObject usage:", JSON.stringify(usage, null, 2));
+
+          const attributes: Record<string, unknown> = {};
+          if (captureContent) {
+            attributes["gen_ai.request.model"] = modelId;
+          }
+
+          if (firstTokenTime) {
+            attributes["gen_ai.time_to_first_token_ms"] =
+              firstTokenTime - startTime;
+          }
+
+          sendTrace({
+            config_key: ctx.configKey,
+            session_id: ctx.sessionId,
+            customer_id: ctx.customerId,
+            trace_id: traceId,
+            span_id: spanId,
+            parent_span_id: parentSpanId,
+            name: "streamObject",
+            kind: "llm",
+            model: modelId,
+            start_time: new Date(startTime).toISOString(),
+            end_time: new Date(endTime).toISOString(),
+            duration_ms: endTime - startTime,
+            status: "OK",
+            prompt_tokens: usage?.promptTokens,
+            completion_tokens: usage?.completionTokens,
+            total_tokens: usage?.totalTokens,
+            attributes: captureContent ? attributes : undefined,
+            prompt_key: promptCtx?.promptKey,
+            prompt_version: promptCtx?.promptVersion,
+            prompt_ab_test_key: promptCtx?.abTestKey,
+            prompt_variant_index: promptCtx?.variantIndex,
+          }).catch(() => {});
+        })
+        .catch((error: any) => {
+          const endTime = Date.now();
+
+          sendTrace({
+            config_key: ctx.configKey,
+            session_id: ctx.sessionId,
+            customer_id: ctx.customerId,
+            trace_id: traceId,
+            span_id: spanId,
+            parent_span_id: parentSpanId,
+            name: "streamObject",
+            kind: "llm",
+            model: modelId,
+            start_time: new Date(startTime).toISOString(),
+            end_time: new Date(endTime).toISOString(),
+            duration_ms: endTime - startTime,
+            status: "ERROR",
+            error_message: error?.message,
+            prompt_key: promptCtx?.promptKey,
+            prompt_version: promptCtx?.promptVersion,
+            prompt_ab_test_key: promptCtx?.abTestKey,
+            prompt_variant_index: promptCtx?.variantIndex,
+          }).catch(() => {});
+        });
+    }
+
+    // Wrap the partial object stream to capture first token time
+    // We need to use a Proxy since partialObjectStream is a getter-only property
+    if (result?.partialObjectStream) {
+      const originalStream = result.partialObjectStream;
+      const wrappedStream = (async function* () {
+        for await (const chunk of originalStream) {
+          if (!firstTokenTime) {
+            firstTokenTime = Date.now();
+            log("⏱️ Time to first token:", firstTokenTime - startTime, "ms");
+          }
+          yield chunk;
+        }
+      })();
+
+      return new Proxy(result, {
+        get(target, prop) {
+          if (prop === "partialObjectStream") {
+            return wrappedStream;
+          }
+          return (target as any)[prop];
+        },
+      });
+    }
+
+    return result;
+  };
 }
