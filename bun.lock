@@ -6,8 +6,10 @@
       "name": "@fallom/trace",
       "dependencies": {
         "@opentelemetry/api": "^1.7.0",
+        "@opentelemetry/core": "^1.19.0",
         "@opentelemetry/exporter-trace-otlp-http": "^0.46.0",
         "@opentelemetry/sdk-node": "^0.46.0",
+        "@opentelemetry/sdk-trace-base": "^1.19.0",
         "@opentelemetry/sdk-trace-node": "^1.19.0",
         "@traceloop/instrumentation-openai": "^0.11.0",
         "tslib": "^2.6.0",
@@ -95,7 +97,7 @@
 
     "@opentelemetry/context-async-hooks": ["@opentelemetry/context-async-hooks@1.30.1", "", { "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-s5vvxXPVdjqS3kTLKMeBMvop9hbWkwzBpu+mUO2M7sZtlkyDJGwFe33wRKnbaYDo8ExRVBIIdwIGrqpxHuKttA=="],
 
-    "@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+    "@opentelemetry/core": ["@opentelemetry/core@1.30.1", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ=="],
 
     "@opentelemetry/exporter-trace-otlp-grpc": ["@opentelemetry/exporter-trace-otlp-grpc@0.46.0", "", { "dependencies": { "@grpc/grpc-js": "^1.7.1", "@opentelemetry/core": "1.19.0", "@opentelemetry/otlp-grpc-exporter-base": "0.46.0", "@opentelemetry/otlp-transformer": "0.46.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/sdk-trace-base": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": "^1.0.0" } }, "sha512-kR4kehnfIhv7v/2MuNYfrlh9A/ZtQofwCzurTIplornUjdzhKDGgjui1NkNTqTfM1QkqfCiavGsf5hwocx29bA=="],
 
@@ -127,11 +129,11 @@
 
     "@opentelemetry/sdk-node": ["@opentelemetry/sdk-node@0.46.0", "", { "dependencies": { "@opentelemetry/api-logs": "0.46.0", "@opentelemetry/core": "1.19.0", "@opentelemetry/exporter-trace-otlp-grpc": "0.46.0", "@opentelemetry/exporter-trace-otlp-http": "0.46.0", "@opentelemetry/exporter-trace-otlp-proto": "0.46.0", "@opentelemetry/exporter-zipkin": "1.19.0", "@opentelemetry/instrumentation": "0.46.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/sdk-logs": "0.46.0", "@opentelemetry/sdk-metrics": "1.19.0", "@opentelemetry/sdk-trace-base": "1.19.0", "@opentelemetry/sdk-trace-node": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.3.0 <1.8.0" } }, "sha512-BQhzdCRZXchhKjZaFkgxlgoowjOt/QXekJ1CZgfvFO9Yg5GV15LyJFUEyQkDyD8XbshGo3Cnj0WZMBnDWtWY1A=="],
 
-    "@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+    "@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.30.1", "", { "dependencies": { "@opentelemetry/core": "1.30.1", "@opentelemetry/resources": "1.30.1", "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-jVPgBbH1gCy2Lb7X0AVQ8XAfgg0pJ4nvl8/IiQA6nxOsPvS+0zMJaFSs2ltXe0J6C8dqjcnpyqINDJmU30+uOg=="],
 
     "@opentelemetry/sdk-trace-node": ["@opentelemetry/sdk-trace-node@1.30.1", "", { "dependencies": { "@opentelemetry/context-async-hooks": "1.30.1", "@opentelemetry/core": "1.30.1", "@opentelemetry/propagator-b3": "1.30.1", "@opentelemetry/propagator-jaeger": "1.30.1", "@opentelemetry/sdk-trace-base": "1.30.1", "semver": "^7.5.2" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-cBjYOINt1JxXdpw1e5MlHmFRc5fgj4GW/86vsKFxJCJ8AL4PdVtYH41gWwl4qd4uQjqEL1oJVrXkSy5cnduAnQ=="],
 
-    "@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+    "@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 
@@ -473,21 +475,53 @@
 
     "yocto-queue": ["yocto-queue@1.2.2", "", {}, "sha512-4LCcse/U2MHZ63HAJVE+v71o7yOdIe4cZ70Wpf8D/IyjDKYQLV5GD46B+hSTjJsvV5PztjvHoU580EftxjDZFQ=="],
 
-    "@opentelemetry/propagator-b3/@opentelemetry/core": ["@opentelemetry/core@1.30.1", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ=="],
+    "@opentelemetry/exporter-trace-otlp-grpc/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
 
-    "@opentelemetry/propagator-jaeger/@opentelemetry/core": ["@opentelemetry/core@1.30.1", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ=="],
+    "@opentelemetry/exporter-trace-otlp-grpc/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+
+    "@opentelemetry/exporter-trace-otlp-http/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/exporter-trace-otlp-http/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+
+    "@opentelemetry/exporter-trace-otlp-proto/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/exporter-trace-otlp-proto/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+
+    "@opentelemetry/exporter-zipkin/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/exporter-zipkin/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+
+    "@opentelemetry/exporter-zipkin/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-exporter-base/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/otlp-grpc-exporter-base/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/otlp-proto-exporter-base/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/otlp-transformer/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/otlp-transformer/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
+
+    "@opentelemetry/resources/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/resources/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/sdk-logs/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/sdk-metrics/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/sdk-node/@opentelemetry/core": ["@opentelemetry/core@1.19.0", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-w42AukJh3TP8R0IZZOVJVM/kMWu8g+lm4LzT70WtuKqhwq7KVhcDzZZuZinWZa6TtQCl7Smt2wolEYzpHabOgw=="],
+
+    "@opentelemetry/sdk-node/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0", "@opentelemetry/resources": "1.19.0", "@opentelemetry/semantic-conventions": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-+IRvUm+huJn2KqfFW3yW/cjvRwJ8Q7FzYHoUNx5Fr0Lws0LxjMJG1uVB8HDpLwm7mg5XXH2M5MF+0jj5cM8BpQ=="],
 
     "@opentelemetry/sdk-node/@opentelemetry/sdk-trace-node": ["@opentelemetry/sdk-trace-node@1.19.0", "", { "dependencies": { "@opentelemetry/context-async-hooks": "1.19.0", "@opentelemetry/core": "1.19.0", "@opentelemetry/propagator-b3": "1.19.0", "@opentelemetry/propagator-jaeger": "1.19.0", "@opentelemetry/sdk-trace-base": "1.19.0", "semver": "^7.5.2" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-TCiEq/cUjM15RFqBRwWomTVbOqzndWL4ILa7ZCu0zbjU1/XY6AgHkgrgAc7vGP6TjRqH4Xryuglol8tcIfbBUQ=="],
 
-    "@opentelemetry/sdk-trace-node/@opentelemetry/core": ["@opentelemetry/core@1.30.1", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ=="],
+    "@opentelemetry/sdk-node/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
 
-    "@opentelemetry/sdk-trace-node/@opentelemetry/sdk-trace-base": ["@opentelemetry/sdk-trace-base@1.30.1", "", { "dependencies": { "@opentelemetry/core": "1.30.1", "@opentelemetry/resources": "1.30.1", "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-jVPgBbH1gCy2Lb7X0AVQ8XAfgg0pJ4nvl8/IiQA6nxOsPvS+0zMJaFSs2ltXe0J6C8dqjcnpyqINDJmU30+uOg=="],
-
-    "@traceloop/instrumentation-openai/@opentelemetry/core": ["@opentelemetry/core@1.30.1", "", { "dependencies": { "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-OOCM2C/QIURhJMuKaekP3TRBxBKxG/TWWA0TL2J6nXUtDnuCtccy49LUJF8xPFXMX+0LMcxFpCo8M9cGY1W6rQ=="],
+    "@opentelemetry/sdk-trace-base/@opentelemetry/resources": ["@opentelemetry/resources@1.30.1", "", { "dependencies": { "@opentelemetry/core": "1.30.1", "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-5UxZqiAgLYGFjS4s9qm5mBVo433u+dSPUFWVWXmLAD4wB65oMCoXaJP1KJa9DIYYMeHu3z4BZcStG3LC593cWA=="],
 
     "@traceloop/instrumentation-openai/@opentelemetry/instrumentation": ["@opentelemetry/instrumentation@0.56.0", "", { "dependencies": { "@opentelemetry/api-logs": "0.56.0", "@types/shimmer": "^1.2.0", "import-in-the-middle": "^1.8.1", "require-in-the-middle": "^7.1.1", "semver": "^7.5.2", "shimmer": "^1.2.1" }, "peerDependencies": { "@opentelemetry/api": "^1.3.0" } }, "sha512-2KkGBKE+FPXU1F0zKww+stnlUxUTlBvLCiWdP63Z9sqXYeNI/ziNzsxAp4LAdUcTQmXjw1IWgvm5CAb/BHy99w=="],
-
-    "@traceloop/instrumentation-openai/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
 
     "mlly/pathe": ["pathe@2.0.3", "", {}, "sha512-WUjGcAqP1gQacoQe+OBJsFA7Ld4DyXuUIjZ5cc75cLHvJ7dtNsTugphxIADwspS+AraAUePCKrSVtPLFj/F88w=="],
 
@@ -499,21 +533,37 @@
 
     "wrap-ansi/ansi-styles": ["ansi-styles@4.3.0", "", { "dependencies": { "color-convert": "^2.0.1" } }, "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg=="],
 
-    "@opentelemetry/propagator-b3/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
+    "@opentelemetry/exporter-trace-otlp-grpc/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
 
-    "@opentelemetry/propagator-jaeger/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
+    "@opentelemetry/exporter-trace-otlp-grpc/@opentelemetry/sdk-trace-base/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/exporter-trace-otlp-http/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/exporter-trace-otlp-http/@opentelemetry/sdk-trace-base/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/exporter-trace-otlp-proto/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/exporter-trace-otlp-proto/@opentelemetry/sdk-trace-base/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-exporter-base/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-grpc-exporter-base/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-proto-exporter-base/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-transformer/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/otlp-transformer/@opentelemetry/sdk-trace-base/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/sdk-logs/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
+
+    "@opentelemetry/sdk-metrics/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.19.0", "", {}, "sha512-14jRpC8f5c0gPSwoZ7SbEJni1PqI+AhAE8m1bMz6v+RPM4OlP1PT2UHBJj5Qh/ALLPjhVU/aZUK3YyjTUqqQVg=="],
 
     "@opentelemetry/sdk-node/@opentelemetry/sdk-trace-node/@opentelemetry/context-async-hooks": ["@opentelemetry/context-async-hooks@1.19.0", "", { "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-0i1ECOc9daKK3rjUgDDXf0GDD5XfCou5lXnt2DALIc2qKoruPPcesobNKE54laSVUWnC3jX26RzuOa31g0V32A=="],
 
     "@opentelemetry/sdk-node/@opentelemetry/sdk-trace-node/@opentelemetry/propagator-b3": ["@opentelemetry/propagator-b3@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-v7y5IBOKBm0vP3yf0DHzlw4L2gL6tZ0KeeMTaxfO5IuomMffDbrGWcvYFp0Dt4LdZctTSK523rVLBB9FBHBciQ=="],
 
     "@opentelemetry/sdk-node/@opentelemetry/sdk-trace-node/@opentelemetry/propagator-jaeger": ["@opentelemetry/propagator-jaeger@1.19.0", "", { "dependencies": { "@opentelemetry/core": "1.19.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.8.0" } }, "sha512-dedkOoTzKg+nYoLWCMp0Im+wo+XkTRW6aXhi8VQRtMW/9SNJGOllCJSu8llToLxMDF0+6zu7OCrKkevAof2tew=="],
-
-    "@opentelemetry/sdk-trace-node/@opentelemetry/core/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
-
-    "@opentelemetry/sdk-trace-node/@opentelemetry/sdk-trace-base/@opentelemetry/resources": ["@opentelemetry/resources@1.30.1", "", { "dependencies": { "@opentelemetry/core": "1.30.1", "@opentelemetry/semantic-conventions": "1.28.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.0.0 <1.10.0" } }, "sha512-5UxZqiAgLYGFjS4s9qm5mBVo433u+dSPUFWVWXmLAD4wB65oMCoXaJP1KJa9DIYYMeHu3z4BZcStG3LC593cWA=="],
-
-    "@opentelemetry/sdk-trace-node/@opentelemetry/sdk-trace-base/@opentelemetry/semantic-conventions": ["@opentelemetry/semantic-conventions@1.28.0", "", {}, "sha512-lp4qAiMTD4sNWW4DbKLBkfiMZ4jbAboJIGOQr5DvciMRI494OapieI9qiODpOt0XBr1LjIDy1xAGAnVs5supTA=="],
 
     "@traceloop/instrumentation-openai/@opentelemetry/instrumentation/@opentelemetry/api-logs": ["@opentelemetry/api-logs@0.56.0", "", { "dependencies": { "@opentelemetry/api": "^1.3.0" } }, "sha512-Wr39+94UNNG3Ei9nv3pHd4AJ63gq5nSemMRpCd8fPwDL9rN3vK26lzxfH27mw16XzOSO+TpyQwBAMaLxaPWG0g=="],
 

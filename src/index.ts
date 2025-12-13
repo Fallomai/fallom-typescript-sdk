@@ -42,6 +42,15 @@ export { init } from "./init";
 export type { InitOptions } from "./init";
 export type { PromptResult } from "./prompts";
 
+// Mastra integration
+export {
+  FallomExporter,
+  setMastraPrompt,
+  setMastraPromptAB,
+  clearMastraPrompt,
+} from "./mastra";
+export type { FallomExporterOptions } from "./mastra";
+
 // Re-import for default export
 import * as trace from "./trace";
 import * as models from "./models";
