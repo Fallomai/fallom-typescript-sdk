@@ -471,10 +471,18 @@ interface TraceData {
  */
 function messagesToOtelAttributes(
   messages:
-    | Array<{ role: string; content: string | unknown[]; tool_calls?: unknown[] }>
+    | Array<{
+        role: string;
+        content: string | unknown[];
+        tool_calls?: unknown[];
+      }>
     | undefined,
   completion:
-    | { role: string; content: string | unknown[] | null; tool_calls?: unknown[] }
+    | {
+        role: string;
+        content: string | unknown[] | null;
+        tool_calls?: unknown[];
+      }
     | undefined,
   model: string | undefined,
   responseId: string | undefined
