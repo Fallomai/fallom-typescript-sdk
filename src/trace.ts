@@ -1579,3 +1579,193 @@ function createStreamObjectWrapper(aiModule: any) {
     return result;
   };
 }
+
+// ============================================================================
+// Mastra Agent Wrapper
+// ============================================================================
+
+/**
+ * Wrap a Mastra agent to automatically trace all generate() calls.
+ *
+ * @param agent - The Mastra Agent instance
+ * @returns The same agent with tracing enabled
+ *
+ * @example
+ * ```typescript
+ * import { trace } from "@fallom/trace";
+ * import { Agent } from "@mastra/core";
+ *
+ * await trace.init({ apiKey: "your-key" });
+ *
+ * const agent = new Agent({ ... });
+ * const tracedAgent = trace.wrapMastraAgent(agent);
+ *
+ * trace.setSession("my-app", "session-123", "user-456");
+ * const result = await tracedAgent.generate([{ role: "user", content: "Hello" }]);
+ * // ^ Automatically traced!
+ * ```
+ */
+export function wrapMastraAgent<
+  T extends {
+    generate: (...args: any[]) => Promise<any>;
+    name?: string;
+  }
+>(agent: T): T {
+  const originalGenerate = agent.generate.bind(agent);
+  const agentName = agent.name || "MastraAgent";
+
+  agent.generate = async function (...args: any[]) {
+    const ctx = sessionStorage.getStore() || fallbackSession;
+    if (!ctx || !initialized) {
+      return originalGenerate(...args);
+    }
+
+    // Get prompt context
+    let promptCtx: {
+      promptKey: string;
+      promptVersion: number;
+      abTestKey?: string;
+      variantIndex?: number;
+    } | null = null;
+    try {
+      const { getPromptContext } = await import("./prompts");
+      promptCtx = getPromptContext();
+    } catch {
+      // prompts module not available
+    }
+
+    const traceId = generateHexId(32);
+    const spanId = generateHexId(16);
+    const startTime = Date.now();
+    const messages = args[0] || [];
+
+    try {
+      const result = await originalGenerate(...args);
+      const endTime = Date.now();
+
+      // Extract model from agent config or result
+      const model = result?.model?.modelId || "unknown";
+
+      // Extract tool calls from steps (Mastra stores them in steps)
+      const toolCalls: Array<{ name: string; arguments: any; result?: any }> =
+        [];
+      if (result?.steps?.length) {
+        for (const step of result.steps) {
+          if (step.toolCalls?.length) {
+            for (let i = 0; i < step.toolCalls.length; i++) {
+              const tc = step.toolCalls[i];
+              const tr = step.toolResults?.[i];
+              toolCalls.push({
+                name: tc.toolName,
+                arguments: tc.args,
+                result: tr?.result,
+              });
+            }
+          }
+        }
+      }
+
+      // Build OTEL-style attributes
+      const attributes: Record<string, unknown> = {
+        "gen_ai.system": "Mastra",
+        "gen_ai.request.model": model,
+        "gen_ai.response.model": model,
+        "fallom.source": "mastra-agent",
+        "llm.request.type": "chat",
+      };
+
+      // Add messages to attributes
+      if (Array.isArray(messages)) {
+        messages.forEach((msg: any, i: number) => {
+          attributes[`gen_ai.prompt.${i}.role`] = msg.role || "user";
+          attributes[`gen_ai.prompt.${i}.content`] =
+            typeof msg.content === "string"
+              ? msg.content
+              : JSON.stringify(msg.content);
+        });
+      }
+
+      // Add response
+      if (result?.text) {
+        attributes["gen_ai.completion.0.role"] = "assistant";
+        attributes["gen_ai.completion.0.content"] = result.text;
+        attributes["gen_ai.completion.0.finish_reason"] = "stop";
+      }
+
+      // Add tool calls to attributes
+      if (toolCalls.length > 0) {
+        attributes["fallom.tool_calls"] = JSON.stringify(toolCalls);
+        toolCalls.forEach((tc, i) => {
+          attributes[`gen_ai.completion.0.tool_calls.${i}.name`] = tc.name;
+          attributes[`gen_ai.completion.0.tool_calls.${i}.type`] = "function";
+          attributes[`gen_ai.completion.0.tool_calls.${i}.arguments`] =
+            JSON.stringify(tc.arguments);
+        });
+      }
+
+      // Add usage
+      if (result?.usage) {
+        attributes["gen_ai.usage.prompt_tokens"] = result.usage.promptTokens;
+        attributes["gen_ai.usage.completion_tokens"] =
+          result.usage.completionTokens;
+        attributes["llm.usage.total_tokens"] = result.usage.totalTokens;
+      }
+
+      // Build trace
+      const traceData: TraceData = {
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        name: `mastra.${agentName}.generate`,
+        kind: "client",
+        model,
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "OK",
+        prompt_tokens: result?.usage?.promptTokens,
+        completion_tokens: result?.usage?.completionTokens,
+        total_tokens: result?.usage?.totalTokens,
+        attributes,
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      };
+
+      // Send trace (non-blocking)
+      sendTrace(traceData).catch(() => {});
+
+      return result;
+    } catch (error) {
+      const endTime = Date.now();
+
+      // Send error trace
+      const traceData: TraceData = {
+        config_key: ctx.configKey,
+        session_id: ctx.sessionId,
+        customer_id: ctx.customerId,
+        trace_id: traceId,
+        span_id: spanId,
+        name: `mastra.${agentName}.generate`,
+        kind: "client",
+        start_time: new Date(startTime).toISOString(),
+        end_time: new Date(endTime).toISOString(),
+        duration_ms: endTime - startTime,
+        status: "ERROR",
+        error_message: error instanceof Error ? error.message : String(error),
+        prompt_key: promptCtx?.promptKey,
+        prompt_version: promptCtx?.promptVersion,
+        prompt_ab_test_key: promptCtx?.abTestKey,
+        prompt_variant_index: promptCtx?.variantIndex,
+      };
+
+      sendTrace(traceData).catch(() => {});
+      throw error;
+    }
+  } as any;
+
+  return agent;
+}
