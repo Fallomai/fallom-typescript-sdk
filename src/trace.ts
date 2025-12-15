@@ -1051,6 +1051,89 @@ export function wrapGoogleAI<
  * }); // Automatically traced!
  * ```
  */
+/** Options for wrapAISDK */
+interface WrapAISDKOptions {
+  /**
+   * Enable debug logging to see the raw Vercel AI SDK response structure.
+   * Useful for debugging missing usage/token data.
+   */
+  debug?: boolean;
+}
+
+// Global debug flag for AI SDK wrappers
+let aiSdkDebug = false;
+
+/**
+ * Extract usage data from Vercel AI SDK response.
+ *
+ * Different providers return usage in different locations:
+ * - @ai-sdk/openai: result.usage.promptTokens (works correctly)
+ * - @openrouter/ai-sdk-provider: result.usage is null, but data is in
+ *   result.experimental_providerMetadata.openrouter.usage
+ *
+ * This helper checks all possible locations.
+ */
+interface ExtractedUsage {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  cost?: number;
+}
+
+function extractUsageFromResult(
+  result: any,
+  directUsage?: any
+): ExtractedUsage {
+  // Start with direct usage (for streaming where usage is awaited separately)
+  let usage = directUsage ?? result?.usage;
+
+  // Check if usage values are valid (not null/NaN)
+  const isValidNumber = (v: any) =>
+    v !== null && v !== undefined && !Number.isNaN(v);
+
+  let promptTokens = isValidNumber(usage?.promptTokens)
+    ? usage.promptTokens
+    : undefined;
+  let completionTokens = isValidNumber(usage?.completionTokens)
+    ? usage.completionTokens
+    : undefined;
+  let totalTokens = isValidNumber(usage?.totalTokens)
+    ? usage.totalTokens
+    : undefined;
+  let cost: number | undefined;
+
+  // Fallback: Check experimental_providerMetadata.openrouter.usage
+  // This is where @openrouter/ai-sdk-provider puts the real usage data
+  const orUsage = result?.experimental_providerMetadata?.openrouter?.usage;
+  if (orUsage) {
+    if (promptTokens === undefined && isValidNumber(orUsage.promptTokens)) {
+      promptTokens = orUsage.promptTokens;
+    }
+    if (
+      completionTokens === undefined &&
+      isValidNumber(orUsage.completionTokens)
+    ) {
+      completionTokens = orUsage.completionTokens;
+    }
+    if (totalTokens === undefined && isValidNumber(orUsage.totalTokens)) {
+      totalTokens = orUsage.totalTokens;
+    }
+    if (isValidNumber(orUsage.cost)) {
+      cost = orUsage.cost;
+    }
+  }
+
+  // Calculate total if we have parts but not total
+  if (
+    totalTokens === undefined &&
+    (promptTokens !== undefined || completionTokens !== undefined)
+  ) {
+    totalTokens = (promptTokens ?? 0) + (completionTokens ?? 0);
+  }
+
+  return { promptTokens, completionTokens, totalTokens, cost };
+}
+
 export function wrapAISDK<
   T extends {
     generateText: (...args: any[]) => Promise<any>;
@@ -1059,7 +1142,8 @@ export function wrapAISDK<
     streamObject?: (...args: any[]) => any;
   }
 >(
-  ai: T
+  ai: T,
+  options?: WrapAISDKOptions
 ): {
   generateText: T["generateText"];
   streamText: T["streamText"];
@@ -1068,6 +1152,9 @@ export function wrapAISDK<
 } {
   // Store reference to the module to preserve function bindings
   const aiModule = ai;
+
+  // Set debug flag
+  aiSdkDebug = options?.debug ?? false;
 
   return {
     generateText: createGenerateTextWrapper(aiModule),
@@ -1115,6 +1202,30 @@ function createGenerateTextWrapper(aiModule: any) {
       const result = await aiModule.generateText(...args);
       const endTime = Date.now();
 
+      // Debug: log the full result structure
+      if (aiSdkDebug) {
+        console.log(
+          "\n🔍 [Fallom Debug] generateText result keys:",
+          Object.keys(result || {})
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.usage:",
+          JSON.stringify(result?.usage, null, 2)
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.response keys:",
+          Object.keys(result?.response || {})
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.response.usage:",
+          JSON.stringify(result?.response?.usage, null, 2)
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.experimental_providerMetadata:",
+          JSON.stringify(result?.experimental_providerMetadata, null, 2)
+        );
+      }
+
       // Extract model info from the result or params
       const modelId =
         result?.response?.modelId ||
@@ -1148,6 +1259,9 @@ function createGenerateTextWrapper(aiModule: any) {
         }
       }
 
+      // Extract usage from all possible locations (handles @openrouter/ai-sdk-provider)
+      const usage = extractUsageFromResult(result);
+
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
@@ -1162,9 +1276,9 @@ function createGenerateTextWrapper(aiModule: any) {
         end_time: new Date(endTime).toISOString(),
         duration_ms: endTime - startTime,
         status: "OK",
-        prompt_tokens: result?.usage?.promptTokens,
-        completion_tokens: result?.usage?.completionTokens,
-        total_tokens: result?.usage?.totalTokens,
+        prompt_tokens: usage.promptTokens,
+        completion_tokens: usage.completionTokens,
+        total_tokens: usage.totalTokens,
         attributes: captureContent ? attributes : undefined,
         prompt_key: promptCtx?.promptKey,
         prompt_version: promptCtx?.promptVersion,
@@ -1244,10 +1358,38 @@ function createStreamTextWrapper(aiModule: any) {
     // Hook into the usage promise to capture when stream completes
     if (result?.usage) {
       result.usage
-        .then((usage: any) => {
+        .then(async (rawUsage: any) => {
           const endTime = Date.now();
 
-          log("📊 streamText usage:", JSON.stringify(usage, null, 2));
+          // Debug: log the usage structure
+          if (aiSdkDebug) {
+            console.log(
+              "\n🔍 [Fallom Debug] streamText usage:",
+              JSON.stringify(rawUsage, null, 2)
+            );
+            console.log(
+              "🔍 [Fallom Debug] streamText result keys:",
+              Object.keys(result || {})
+            );
+          }
+
+          log("📊 streamText usage:", JSON.stringify(rawUsage, null, 2));
+
+          // For streaming, experimental_providerMetadata might be a promise
+          let providerMetadata = result?.experimental_providerMetadata;
+          if (providerMetadata && typeof providerMetadata.then === "function") {
+            try {
+              providerMetadata = await providerMetadata;
+            } catch {
+              providerMetadata = undefined;
+            }
+          }
+
+          // Extract usage from all possible locations
+          const usage = extractUsageFromResult(
+            { experimental_providerMetadata: providerMetadata },
+            rawUsage
+          );
 
           const attributes: Record<string, unknown> = {};
           if (captureContent) {
@@ -1277,9 +1419,9 @@ function createStreamTextWrapper(aiModule: any) {
             end_time: new Date(endTime).toISOString(),
             duration_ms: endTime - startTime,
             status: "OK",
-            prompt_tokens: usage?.promptTokens,
-            completion_tokens: usage?.completionTokens,
-            total_tokens: usage?.totalTokens,
+            prompt_tokens: usage.promptTokens,
+            completion_tokens: usage.completionTokens,
+            total_tokens: usage.totalTokens,
             time_to_first_token_ms: firstTokenTime
               ? firstTokenTime - startTime
               : undefined,
@@ -1380,6 +1522,26 @@ function createGenerateObjectWrapper(aiModule: any) {
       const result = await aiModule.generateObject(...args);
       const endTime = Date.now();
 
+      // Debug: log the full result structure
+      if (aiSdkDebug) {
+        console.log(
+          "\n🔍 [Fallom Debug] generateObject result keys:",
+          Object.keys(result || {})
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.usage:",
+          JSON.stringify(result?.usage, null, 2)
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.response keys:",
+          Object.keys(result?.response || {})
+        );
+        console.log(
+          "🔍 [Fallom Debug] result.response.usage:",
+          JSON.stringify(result?.response?.usage, null, 2)
+        );
+      }
+
       const modelId =
         result?.response?.modelId ||
         params?.model?.modelId ||
@@ -1397,6 +1559,9 @@ function createGenerateObjectWrapper(aiModule: any) {
         }
       }
 
+      // Extract usage from all possible locations (handles @openrouter/ai-sdk-provider)
+      const usage = extractUsageFromResult(result);
+
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
@@ -1411,9 +1576,9 @@ function createGenerateObjectWrapper(aiModule: any) {
         end_time: new Date(endTime).toISOString(),
         duration_ms: endTime - startTime,
         status: "OK",
-        prompt_tokens: result?.usage?.promptTokens,
-        completion_tokens: result?.usage?.completionTokens,
-        total_tokens: result?.usage?.totalTokens,
+        prompt_tokens: usage.promptTokens,
+        completion_tokens: usage.completionTokens,
+        total_tokens: usage.totalTokens,
         attributes: captureContent ? attributes : undefined,
         prompt_key: promptCtx?.promptKey,
         prompt_version: promptCtx?.promptVersion,
@@ -1495,10 +1660,38 @@ function createStreamObjectWrapper(aiModule: any) {
     // Hook into usage promise for completion
     if (result?.usage) {
       result.usage
-        .then((usage: any) => {
+        .then(async (rawUsage: any) => {
           const endTime = Date.now();
 
-          log("📊 streamObject usage:", JSON.stringify(usage, null, 2));
+          // Debug: log the usage structure
+          if (aiSdkDebug) {
+            console.log(
+              "\n🔍 [Fallom Debug] streamObject usage:",
+              JSON.stringify(rawUsage, null, 2)
+            );
+            console.log(
+              "🔍 [Fallom Debug] streamObject result keys:",
+              Object.keys(result || {})
+            );
+          }
+
+          log("📊 streamObject usage:", JSON.stringify(rawUsage, null, 2));
+
+          // For streaming, experimental_providerMetadata might be a promise
+          let providerMetadata = result?.experimental_providerMetadata;
+          if (providerMetadata && typeof providerMetadata.then === "function") {
+            try {
+              providerMetadata = await providerMetadata;
+            } catch {
+              providerMetadata = undefined;
+            }
+          }
+
+          // Extract usage from all possible locations
+          const usage = extractUsageFromResult(
+            { experimental_providerMetadata: providerMetadata },
+            rawUsage
+          );
 
           const attributes: Record<string, unknown> = {};
           if (captureContent) {
@@ -1524,9 +1717,9 @@ function createStreamObjectWrapper(aiModule: any) {
             end_time: new Date(endTime).toISOString(),
             duration_ms: endTime - startTime,
             status: "OK",
-            prompt_tokens: usage?.promptTokens,
-            completion_tokens: usage?.completionTokens,
-            total_tokens: usage?.totalTokens,
+            prompt_tokens: usage.promptTokens,
+            completion_tokens: usage.completionTokens,
+            total_tokens: usage.totalTokens,
             attributes: captureContent ? attributes : undefined,
             prompt_key: promptCtx?.promptKey,
             prompt_version: promptCtx?.promptVersion,
