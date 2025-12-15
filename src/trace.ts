@@ -644,14 +644,23 @@ export function wrapOpenAI<
       const endTime = Date.now();
 
       // Build OTEL-format attributes (matches Python SDK)
-      const attributes = captureContent
+      const attributes: Record<string, unknown> = captureContent
         ? messagesToOtelAttributes(
             params?.messages,
             response?.choices?.[0]?.message,
             response?.model || params?.model,
             response?.id
           )
-        : undefined;
+        : {};
+
+      // Send raw usage data so microservice can extract/debug without SDK updates
+      if (response?.usage) {
+        attributes["fallom.raw.usage"] = JSON.stringify(response.usage);
+      }
+      if (response?.choices?.[0]?.finish_reason) {
+        attributes["gen_ai.response.finish_reason"] =
+          response.choices[0].finish_reason;
+      }
 
       sendTrace({
         config_key: ctx.configKey,
@@ -670,7 +679,7 @@ export function wrapOpenAI<
         prompt_tokens: response?.usage?.prompt_tokens,
         completion_tokens: response?.usage?.completion_tokens,
         total_tokens: response?.usage?.total_tokens,
-        attributes,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         prompt_key: promptCtx?.promptKey,
         prompt_version: promptCtx?.promptVersion,
         prompt_ab_test_key: promptCtx?.abTestKey,
@@ -779,17 +788,25 @@ export function wrapAnthropic<
       const endTime = Date.now();
 
       // Build OTEL-format attributes for Anthropic
-      const attributes = captureContent
+      const attributes: Record<string, unknown> = captureContent
         ? messagesToOtelAttributes(
             params?.messages,
             { role: "assistant", content: response?.content?.[0]?.text || "" },
             response?.model || params?.model,
             response?.id
           )
-        : undefined;
+        : {};
       // Add system prompt if present (Anthropic-specific)
-      if (attributes && params?.system) {
+      if (params?.system) {
         attributes["gen_ai.system_prompt"] = params.system;
+      }
+
+      // Send raw usage data so microservice can extract/debug without SDK updates
+      if (response?.usage) {
+        attributes["fallom.raw.usage"] = JSON.stringify(response.usage);
+      }
+      if (response?.stop_reason) {
+        attributes["gen_ai.response.finish_reason"] = response.stop_reason;
       }
 
       sendTrace({
@@ -811,7 +828,7 @@ export function wrapAnthropic<
         total_tokens:
           (response?.usage?.input_tokens || 0) +
           (response?.usage?.output_tokens || 0),
-        attributes,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         prompt_key: promptCtx?.promptKey,
         prompt_version: promptCtx?.promptVersion,
         prompt_ab_test_key: promptCtx?.abTestKey,
@@ -950,6 +967,16 @@ export function wrapGoogleAI<
         }
       }
 
+      // Send raw usage data so microservice can extract/debug without SDK updates
+      if (usage) {
+        attributes["fallom.raw.usage"] = JSON.stringify(usage);
+      }
+      // Google AI finish reason
+      const candidate = result?.candidates?.[0];
+      if (candidate?.finishReason) {
+        attributes["gen_ai.response.finish_reason"] = candidate.finishReason;
+      }
+
       sendTrace({
         config_key: ctx.configKey,
         session_id: ctx.sessionId,
@@ -967,7 +994,7 @@ export function wrapGoogleAI<
         prompt_tokens: usage?.promptTokenCount,
         completion_tokens: usage?.candidatesTokenCount,
         total_tokens: usage?.totalTokenCount,
-        attributes: captureContent ? attributes : undefined,
+        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
         prompt_key: promptCtx?.promptKey,
         prompt_version: promptCtx?.promptVersion,
         prompt_ab_test_key: promptCtx?.abTestKey,
@@ -1259,7 +1286,21 @@ function createGenerateTextWrapper(aiModule: any) {
         }
       }
 
+      // Send raw usage data so microservice can extract/debug without SDK updates
+      if (result?.usage) {
+        attributes["fallom.raw.usage"] = JSON.stringify(result.usage);
+      }
+      if (result?.experimental_providerMetadata) {
+        attributes["fallom.raw.providerMetadata"] = JSON.stringify(
+          result.experimental_providerMetadata
+        );
+      }
+      if (result?.finishReason) {
+        attributes["gen_ai.response.finish_reason"] = result.finishReason;
+      }
+
       // Extract usage from all possible locations (handles @openrouter/ai-sdk-provider)
+      // Best-effort client-side extraction, microservice can override
       const usage = extractUsageFromResult(result);
 
       sendTrace({
@@ -1403,6 +1444,15 @@ function createStreamTextWrapper(aiModule: any) {
           if (firstTokenTime) {
             attributes["gen_ai.time_to_first_token_ms"] =
               firstTokenTime - startTime;
+          }
+
+          // Send raw usage data so microservice can extract/debug without SDK updates
+          if (rawUsage) {
+            attributes["fallom.raw.usage"] = JSON.stringify(rawUsage);
+          }
+          if (providerMetadata) {
+            attributes["fallom.raw.providerMetadata"] =
+              JSON.stringify(providerMetadata);
           }
 
           const tracePayload: TraceData = {
@@ -1559,7 +1609,21 @@ function createGenerateObjectWrapper(aiModule: any) {
         }
       }
 
+      // Send raw usage data so microservice can extract/debug without SDK updates
+      if (result?.usage) {
+        attributes["fallom.raw.usage"] = JSON.stringify(result.usage);
+      }
+      if (result?.experimental_providerMetadata) {
+        attributes["fallom.raw.providerMetadata"] = JSON.stringify(
+          result.experimental_providerMetadata
+        );
+      }
+      if (result?.finishReason) {
+        attributes["gen_ai.response.finish_reason"] = result.finishReason;
+      }
+
       // Extract usage from all possible locations (handles @openrouter/ai-sdk-provider)
+      // Best-effort client-side extraction, microservice can override
       const usage = extractUsageFromResult(result);
 
       sendTrace({
@@ -1701,6 +1765,15 @@ function createStreamObjectWrapper(aiModule: any) {
           if (firstTokenTime) {
             attributes["gen_ai.time_to_first_token_ms"] =
               firstTokenTime - startTime;
+          }
+
+          // Send raw usage data so microservice can extract/debug without SDK updates
+          if (rawUsage) {
+            attributes["fallom.raw.usage"] = JSON.stringify(rawUsage);
+          }
+          if (providerMetadata) {
+            attributes["fallom.raw.providerMetadata"] =
+              JSON.stringify(providerMetadata);
           }
 
           sendTrace({
