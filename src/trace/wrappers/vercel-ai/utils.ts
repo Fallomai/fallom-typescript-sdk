@@ -22,14 +22,25 @@ export function extractUsageFromResult(
   const isValidNumber = (v: any) =>
     v !== null && v !== undefined && !Number.isNaN(v);
 
+  // Vercel AI SDK uses inputTokens/outputTokens, OpenAI uses prompt_tokens/completion_tokens
   let promptTokens = isValidNumber(usage?.promptTokens)
     ? usage.promptTokens
+    : isValidNumber(usage?.inputTokens)
+    ? usage.inputTokens
+    : isValidNumber(usage?.prompt_tokens)
+    ? usage.prompt_tokens
     : undefined;
   let completionTokens = isValidNumber(usage?.completionTokens)
     ? usage.completionTokens
+    : isValidNumber(usage?.outputTokens)
+    ? usage.outputTokens
+    : isValidNumber(usage?.completion_tokens)
+    ? usage.completion_tokens
     : undefined;
   let totalTokens = isValidNumber(usage?.totalTokens)
     ? usage.totalTokens
+    : isValidNumber(usage?.total_tokens)
+    ? usage.total_tokens
     : undefined;
   let cost: number | undefined;
 
@@ -63,4 +74,3 @@ export function extractUsageFromResult(
 
   return { promptTokens, completionTokens, totalTokens, cost };
 }
-
