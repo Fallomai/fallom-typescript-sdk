@@ -1,5 +1,8 @@
 /**
  * Vercel AI SDK generateObject wrapper.
+ *
+ * SDK is "dumb" - just captures raw request/response and sends to microservice.
+ * All parsing/extraction happens server-side for easier maintenance.
  */
 
 import {
@@ -12,7 +15,6 @@ import {
 } from "../../core";
 import { generateHexId } from "../../utils";
 import type { SessionContext } from "../../types";
-import { extractUsageFromResult } from "./utils";
 
 export function createGenerateObjectWrapper(
   aiModule: any,
@@ -42,12 +44,8 @@ export function createGenerateObjectWrapper(
 
       if (debug || isDebugMode()) {
         console.log(
-          "\n🔍 [Fallom Debug] generateObject result keys:",
-          Object.keys(result || {})
-        );
-        console.log(
-          "🔍 [Fallom Debug] result.usage:",
-          JSON.stringify(result?.usage, null, 2)
+          "\n🔍 [Fallom Debug] generateObject raw result:",
+          JSON.stringify(result, null, 2)
         );
       }
 
@@ -56,16 +54,27 @@ export function createGenerateObjectWrapper(
         params?.model?.modelId ||
         String(params?.model || "unknown");
 
-      const attributes: Record<string, unknown> = {};
+      // SDK is dumb - just send raw data
+      const attributes: Record<string, unknown> = {
+        "fallom.sdk_version": "2",
+        "fallom.method": "generateObject",
+      };
+
       if (captureContent) {
-        attributes["gen_ai.request.model"] = modelId;
-        attributes["gen_ai.response.model"] = modelId;
-        if (result?.object) {
-          attributes["gen_ai.completion.0.role"] = "assistant";
-          attributes["gen_ai.completion.0.content"] = JSON.stringify(
-            result.object
-          );
-        }
+        attributes["fallom.raw.request"] = JSON.stringify({
+          prompt: params?.prompt,
+          messages: params?.messages,
+          system: params?.system,
+          model: modelId,
+          schema: params?.schema ? "provided" : undefined, // Don't send full schema, just note if present
+        });
+
+        attributes["fallom.raw.response"] = JSON.stringify({
+          object: result?.object,
+          finishReason: result?.finishReason,
+          responseId: result?.response?.id,
+          modelId: result?.response?.modelId,
+        });
       }
 
       if (result?.usage) {
@@ -76,11 +85,6 @@ export function createGenerateObjectWrapper(
           result.experimental_providerMetadata
         );
       }
-      if (result?.finishReason) {
-        attributes["gen_ai.response.finish_reason"] = result.finishReason;
-      }
-
-      const usage = extractUsageFromResult(result);
 
       sendTrace({
         config_key: ctx.configKey,
@@ -96,10 +100,7 @@ export function createGenerateObjectWrapper(
         end_time: new Date(endTime).toISOString(),
         duration_ms: endTime - startTime,
         status: "OK",
-        prompt_tokens: usage.promptTokens,
-        completion_tokens: usage.completionTokens,
-        total_tokens: usage.totalTokens,
-        attributes: captureContent ? attributes : undefined,
+        attributes,
       }).catch(() => {});
 
       return result;
@@ -123,6 +124,10 @@ export function createGenerateObjectWrapper(
         duration_ms: endTime - startTime,
         status: "ERROR",
         error_message: error?.message,
+        attributes: {
+          "fallom.sdk_version": "2",
+          "fallom.method": "generateObject",
+        },
       }).catch(() => {});
 
       throw error;

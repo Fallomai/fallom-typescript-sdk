@@ -1,5 +1,8 @@
 /**
- * OpenAI client wrapper for automatic tracing.
+ * OpenAI SDK Wrapper
+ * 
+ * SDK is "dumb" - just captures raw request/response and sends to microservice.
+ * All parsing/extraction happens server-side for easier maintenance.
  */
 
 import {
@@ -9,12 +12,11 @@ import {
   shouldCaptureContent,
   sendTrace,
 } from "../core";
-import { generateHexId, messagesToOtelAttributes } from "../utils";
+import { generateHexId } from "../utils";
 import type { SessionContext } from "../types";
 
 /**
  * Wrap an OpenAI client to automatically trace all chat completions.
- * Requires a session context (use via FallomSession).
  */
 export function wrapOpenAI<
   T extends {
@@ -45,21 +47,27 @@ export function wrapOpenAI<
       const response = await originalCreate(...args);
       const endTime = Date.now();
 
-      const attributes: Record<string, unknown> = captureContent
-        ? messagesToOtelAttributes(
-            params?.messages,
-            response?.choices?.[0]?.message,
-            response?.model || params?.model,
-            response?.id
-          )
-        : {};
+      // SDK is dumb - just send raw data
+      const attributes: Record<string, unknown> = {
+        "fallom.sdk_version": "2",
+        "fallom.method": "chat.completions.create",
+      };
+
+      if (captureContent) {
+        attributes["fallom.raw.request"] = JSON.stringify({
+          messages: params?.messages,
+          model: params?.model,
+        });
+        attributes["fallom.raw.response"] = JSON.stringify({
+          text: response?.choices?.[0]?.message?.content,
+          finishReason: response?.choices?.[0]?.finish_reason,
+          responseId: response?.id,
+          model: response?.model,
+        });
+      }
 
       if (response?.usage) {
         attributes["fallom.raw.usage"] = JSON.stringify(response.usage);
-      }
-      if (response?.choices?.[0]?.finish_reason) {
-        attributes["gen_ai.response.finish_reason"] =
-          response.choices[0].finish_reason;
       }
 
       sendTrace({
@@ -76,27 +84,12 @@ export function wrapOpenAI<
         end_time: new Date(endTime).toISOString(),
         duration_ms: endTime - startTime,
         status: "OK",
-        prompt_tokens: response?.usage?.prompt_tokens,
-        completion_tokens: response?.usage?.completion_tokens,
-        total_tokens: response?.usage?.total_tokens,
-        attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+        attributes,
       }).catch(() => {});
 
       return response;
     } catch (error: any) {
       const endTime = Date.now();
-
-      const attributes = captureContent
-        ? messagesToOtelAttributes(
-            params?.messages,
-            undefined,
-            params?.model,
-            undefined
-          )
-        : undefined;
-      if (attributes) {
-        attributes["error.message"] = error?.message;
-      }
 
       sendTrace({
         config_key: ctx.configKey,
@@ -113,7 +106,10 @@ export function wrapOpenAI<
         duration_ms: endTime - startTime,
         status: "ERROR",
         error_message: error?.message,
-        attributes,
+        attributes: {
+          "fallom.sdk_version": "2",
+          "fallom.method": "chat.completions.create",
+        },
       }).catch(() => {});
 
       throw error;

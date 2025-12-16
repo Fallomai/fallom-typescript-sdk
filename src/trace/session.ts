@@ -83,6 +83,9 @@ export class FallomSession {
   /**
    * Wrap a Vercel AI SDK model to trace all calls (PostHog style).
    * Returns the same model type with tracing injected.
+   * 
+   * Note: This only captures tokens/timing, not prompt/completion content.
+   * Use wrapAISDK for full content tracing.
    */
   traceModel<T>(model: T): T {
     const ctx = this.ctx;
@@ -106,6 +109,7 @@ export class FallomSession {
           const modelId = (model as any).modelId || "unknown";
           const usage = result?.usage || result?.rawResponse?.usage;
 
+          // SDK is dumb - just send raw data, microservice parses
           sendTrace({
             config_key: ctx.configKey,
             session_id: ctx.sessionId,
@@ -113,20 +117,18 @@ export class FallomSession {
             trace_id: traceId,
             span_id: spanId,
             parent_span_id: traceCtx?.parentSpanId,
-            name: "generateText",
+            name: "doGenerate",
             kind: "llm",
             model: modelId,
             start_time: new Date(startTime).toISOString(),
             end_time: new Date(endTime).toISOString(),
             duration_ms: endTime - startTime,
             status: "OK",
-            prompt_tokens: usage?.promptTokens,
-            completion_tokens: usage?.completionTokens,
-            total_tokens: usage?.totalTokens,
-            attributes:
-              shouldCaptureContent() && usage
-                ? { "fallom.raw.usage": JSON.stringify(usage) }
-                : undefined,
+            attributes: {
+              "fallom.sdk_version": "2",
+              "fallom.method": "traceModel.doGenerate",
+              ...(usage ? { "fallom.raw.usage": JSON.stringify(usage) } : {}),
+            },
           }).catch(() => {});
 
           return result;
@@ -139,7 +141,7 @@ export class FallomSession {
             trace_id: traceId,
             span_id: spanId,
             parent_span_id: traceCtx?.parentSpanId,
-            name: "generateText",
+            name: "doGenerate",
             kind: "llm",
             model: (model as any).modelId || "unknown",
             start_time: new Date(startTime).toISOString(),
@@ -148,6 +150,7 @@ export class FallomSession {
             status: "ERROR",
             error_message:
               error instanceof Error ? error.message : String(error),
+            attributes: { "fallom.sdk_version": "2", "fallom.method": "traceModel.doGenerate" },
           }).catch(() => {});
           throw error;
         }
@@ -169,6 +172,7 @@ export class FallomSession {
         try {
           const result = await originalDoStream(...args);
 
+          // SDK is dumb - just send raw data
           sendTrace({
             config_key: ctx.configKey,
             session_id: ctx.sessionId,
@@ -176,7 +180,7 @@ export class FallomSession {
             trace_id: traceId,
             span_id: spanId,
             parent_span_id: traceCtx?.parentSpanId,
-            name: "streamText",
+            name: "doStream",
             kind: "llm",
             model: modelId,
             start_time: new Date(startTime).toISOString(),
@@ -184,6 +188,11 @@ export class FallomSession {
             duration_ms: Date.now() - startTime,
             status: "OK",
             is_streaming: true,
+            attributes: {
+              "fallom.sdk_version": "2",
+              "fallom.method": "traceModel.doStream",
+              "fallom.is_streaming": true,
+            },
           }).catch(() => {});
 
           return result;
@@ -195,7 +204,7 @@ export class FallomSession {
             trace_id: traceId,
             span_id: spanId,
             parent_span_id: traceCtx?.parentSpanId,
-            name: "streamText",
+            name: "doStream",
             kind: "llm",
             model: modelId,
             start_time: new Date(startTime).toISOString(),
@@ -205,6 +214,11 @@ export class FallomSession {
             error_message:
               error instanceof Error ? error.message : String(error),
             is_streaming: true,
+            attributes: {
+              "fallom.sdk_version": "2",
+              "fallom.method": "traceModel.doStream",
+              "fallom.is_streaming": true,
+            },
           }).catch(() => {});
           throw error;
         }

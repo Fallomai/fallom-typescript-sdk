@@ -1,5 +1,8 @@
 /**
  * Vercel AI SDK generateText wrapper.
+ * 
+ * SDK is "dumb" - just captures raw request/response and sends to microservice.
+ * All parsing/extraction happens server-side for easier maintenance.
  */
 
 import {
@@ -12,7 +15,6 @@ import {
 } from "../../core";
 import { generateHexId } from "../../utils";
 import type { SessionContext } from "../../types";
-import { extractUsageFromResult } from "./utils";
 
 export function createGenerateTextWrapper(
   aiModule: any,
@@ -41,18 +43,7 @@ export function createGenerateTextWrapper(
       const endTime = Date.now();
 
       if (debug || isDebugMode()) {
-        console.log(
-          "\n🔍 [Fallom Debug] generateText result keys:",
-          Object.keys(result || {})
-        );
-        console.log(
-          "🔍 [Fallom Debug] result.usage:",
-          JSON.stringify(result?.usage, null, 2)
-        );
-        console.log(
-          "🔍 [Fallom Debug] result.experimental_providerMetadata:",
-          JSON.stringify(result?.experimental_providerMetadata, null, 2)
-        );
+        console.log("\n🔍 [Fallom Debug] generateText raw result:", JSON.stringify(result, null, 2));
       }
 
       const modelId =
@@ -60,45 +51,37 @@ export function createGenerateTextWrapper(
         params?.model?.modelId ||
         String(params?.model || "unknown");
 
-      const attributes: Record<string, unknown> = {};
+      // SDK is dumb - just send raw data, microservice does all parsing
+      const attributes: Record<string, unknown> = {
+        "fallom.sdk_version": "2",
+        "fallom.method": "generateText",
+      };
+
       if (captureContent) {
-        attributes["gen_ai.request.model"] = modelId;
-        attributes["gen_ai.response.model"] = modelId;
-        if (params?.prompt) {
-          attributes["gen_ai.prompt.0.role"] = "user";
-          attributes["gen_ai.prompt.0.content"] = params.prompt;
-        }
-        if (params?.messages) {
-          params.messages.forEach((msg: any, i: number) => {
-            attributes[`gen_ai.prompt.${i}.role`] = msg.role;
-            attributes[`gen_ai.prompt.${i}.content`] =
-              typeof msg.content === "string"
-                ? msg.content
-                : JSON.stringify(msg.content);
-          });
-        }
-        if (result?.text) {
-          attributes["gen_ai.completion.0.role"] = "assistant";
-          attributes["gen_ai.completion.0.content"] = result.text;
-        }
-        if (result?.response?.id) {
-          attributes["gen_ai.response.id"] = result.response.id;
-        }
+        // Send raw request params (microservice extracts prompts, system, etc.)
+        attributes["fallom.raw.request"] = JSON.stringify({
+          prompt: params?.prompt,
+          messages: params?.messages,
+          system: params?.system,
+          model: modelId,
+        });
+        
+        // Send raw response (microservice extracts text, finish_reason, etc.)
+        attributes["fallom.raw.response"] = JSON.stringify({
+          text: result?.text,
+          finishReason: result?.finishReason,
+          responseId: result?.response?.id,
+          modelId: result?.response?.modelId,
+        });
       }
 
+      // Always send usage data for cost calculation
       if (result?.usage) {
         attributes["fallom.raw.usage"] = JSON.stringify(result.usage);
       }
       if (result?.experimental_providerMetadata) {
-        attributes["fallom.raw.providerMetadata"] = JSON.stringify(
-          result.experimental_providerMetadata
-        );
+        attributes["fallom.raw.providerMetadata"] = JSON.stringify(result.experimental_providerMetadata);
       }
-      if (result?.finishReason) {
-        attributes["gen_ai.response.finish_reason"] = result.finishReason;
-      }
-
-      const usage = extractUsageFromResult(result);
 
       sendTrace({
         config_key: ctx.configKey,
@@ -114,17 +97,13 @@ export function createGenerateTextWrapper(
         end_time: new Date(endTime).toISOString(),
         duration_ms: endTime - startTime,
         status: "OK",
-        prompt_tokens: usage.promptTokens,
-        completion_tokens: usage.completionTokens,
-        total_tokens: usage.totalTokens,
-        attributes: captureContent ? attributes : undefined,
+        attributes,
       }).catch(() => {});
 
       return result;
     } catch (error: any) {
       const endTime = Date.now();
-      const modelId =
-        params?.model?.modelId || String(params?.model || "unknown");
+      const modelId = params?.model?.modelId || String(params?.model || "unknown");
 
       sendTrace({
         config_key: ctx.configKey,
@@ -141,6 +120,16 @@ export function createGenerateTextWrapper(
         duration_ms: endTime - startTime,
         status: "ERROR",
         error_message: error?.message,
+        attributes: {
+          "fallom.sdk_version": "2",
+          "fallom.method": "generateText",
+          "fallom.raw.request": JSON.stringify({
+            prompt: params?.prompt,
+            messages: params?.messages,
+            system: params?.system,
+            model: modelId,
+          }),
+        },
       }).catch(() => {});
 
       throw error;

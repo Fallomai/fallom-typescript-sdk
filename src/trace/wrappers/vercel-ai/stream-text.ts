@@ -1,5 +1,8 @@
 /**
  * Vercel AI SDK streamText wrapper.
+ * 
+ * SDK is "dumb" - just captures raw request/response and sends to microservice.
+ * All parsing/extraction happens server-side for easier maintenance.
  */
 
 import {
@@ -11,8 +14,7 @@ import {
   sendTrace,
 } from "../../core";
 import { generateHexId } from "../../utils";
-import type { SessionContext, TraceData } from "../../types";
-import { extractUsageFromResult } from "./utils";
+import type { SessionContext } from "../../types";
 
 function log(...args: unknown[]): void {
   if (isDebugMode()) console.log("[Fallom]", ...args);
@@ -43,23 +45,17 @@ export function createStreamTextWrapper(
     const parentSpanId = traceCtx?.parentSpanId;
 
     let firstTokenTime: number | null = null;
-    const modelId =
-      params?.model?.modelId || String(params?.model || "unknown");
+    const modelId = params?.model?.modelId || String(params?.model || "unknown");
 
-    // Hook into the usage promise
+    // Hook into the usage promise to send trace when streaming completes
     if (result?.usage) {
       result.usage
         .then(async (rawUsage: any) => {
           const endTime = Date.now();
 
           if (debug || isDebugMode()) {
-            console.log(
-              "\n🔍 [Fallom Debug] streamText usage:",
-              JSON.stringify(rawUsage, null, 2)
-            );
+            console.log("\n🔍 [Fallom Debug] streamText raw usage:", JSON.stringify(rawUsage, null, 2));
           }
-
-          log("📊 streamText usage:", JSON.stringify(rawUsage, null, 2));
 
           let providerMetadata = result?.experimental_providerMetadata;
           if (providerMetadata && typeof providerMetadata.then === "function") {
@@ -70,34 +66,33 @@ export function createStreamTextWrapper(
             }
           }
 
-          const usage = extractUsageFromResult(
-            { experimental_providerMetadata: providerMetadata },
-            rawUsage
-          );
+          // SDK is dumb - just send raw data
+          const attributes: Record<string, unknown> = {
+            "fallom.sdk_version": "2",
+            "fallom.method": "streamText",
+            "fallom.is_streaming": true,
+          };
 
-          const attributes: Record<string, unknown> = {};
           if (captureContent) {
-            attributes["gen_ai.request.model"] = modelId;
-            if (params?.prompt) {
-              attributes["gen_ai.prompt.0.role"] = "user";
-              attributes["gen_ai.prompt.0.content"] = params.prompt;
-            }
-          }
-
-          if (firstTokenTime) {
-            attributes["gen_ai.time_to_first_token_ms"] =
-              firstTokenTime - startTime;
+            attributes["fallom.raw.request"] = JSON.stringify({
+              prompt: params?.prompt,
+              messages: params?.messages,
+              system: params?.system,
+              model: modelId,
+            });
           }
 
           if (rawUsage) {
             attributes["fallom.raw.usage"] = JSON.stringify(rawUsage);
           }
           if (providerMetadata) {
-            attributes["fallom.raw.providerMetadata"] =
-              JSON.stringify(providerMetadata);
+            attributes["fallom.raw.providerMetadata"] = JSON.stringify(providerMetadata);
+          }
+          if (firstTokenTime) {
+            attributes["fallom.time_to_first_token_ms"] = firstTokenTime - startTime;
           }
 
-          const tracePayload: TraceData = {
+          sendTrace({
             config_key: ctx.configKey,
             session_id: ctx.sessionId,
             customer_id: ctx.customerId,
@@ -111,16 +106,10 @@ export function createStreamTextWrapper(
             end_time: new Date(endTime).toISOString(),
             duration_ms: endTime - startTime,
             status: "OK",
-            prompt_tokens: usage.promptTokens,
-            completion_tokens: usage.completionTokens,
-            total_tokens: usage.totalTokens,
-            time_to_first_token_ms: firstTokenTime
-              ? firstTokenTime - startTime
-              : undefined,
-            attributes: captureContent ? attributes : undefined,
-          };
-
-          sendTrace(tracePayload).catch(() => {});
+            time_to_first_token_ms: firstTokenTime ? firstTokenTime - startTime : undefined,
+            is_streaming: true,
+            attributes,
+          }).catch(() => {});
         })
         .catch((error: any) => {
           const endTime = Date.now();
@@ -141,6 +130,11 @@ export function createStreamTextWrapper(
             duration_ms: endTime - startTime,
             status: "ERROR",
             error_message: error?.message,
+            attributes: {
+              "fallom.sdk_version": "2",
+              "fallom.method": "streamText",
+              "fallom.is_streaming": true,
+            },
           }).catch(() => {});
         });
     }
