@@ -47,14 +47,21 @@ export function createStreamTextWrapper(
     let firstTokenTime: number | null = null;
     const modelId = params?.model?.modelId || String(params?.model || "unknown");
 
-    // Hook into the usage promise to send trace when streaming completes
+    // Hook into multiple promises to capture all response data
+    // We need: usage, text, finishReason
     if (result?.usage) {
-      result.usage
-        .then(async (rawUsage: any) => {
+      Promise.all([
+        result.usage.catch(() => null),
+        result.text?.catch(() => null),
+        result.finishReason?.catch(() => null),
+      ])
+        .then(async ([rawUsage, responseText, finishReason]) => {
           const endTime = Date.now();
 
           if (debug || isDebugMode()) {
             console.log("\n🔍 [Fallom Debug] streamText raw usage:", JSON.stringify(rawUsage, null, 2));
+            console.log("🔍 [Fallom Debug] streamText response text:", responseText?.slice(0, 100));
+            console.log("🔍 [Fallom Debug] streamText finish reason:", finishReason);
           }
 
           let providerMetadata = result?.experimental_providerMetadata;
@@ -80,6 +87,14 @@ export function createStreamTextWrapper(
               system: params?.system,
               model: modelId,
             });
+            
+            // Include response text and finish reason
+            if (responseText || finishReason) {
+              attributes["fallom.raw.response"] = JSON.stringify({
+                text: responseText,
+                finishReason: finishReason,
+              });
+            }
           }
 
           if (rawUsage) {

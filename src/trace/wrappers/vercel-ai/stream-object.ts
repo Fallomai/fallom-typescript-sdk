@@ -42,14 +42,20 @@ export function createStreamObjectWrapper(
 
     const modelId = params?.model?.modelId || String(params?.model || "unknown");
 
-    // Hook into the usage promise
+    // Hook into multiple promises to capture all response data
     if (result?.usage) {
-      result.usage
-        .then(async (rawUsage: any) => {
+      Promise.all([
+        result.usage.catch(() => null),
+        result.object?.catch(() => null),
+        result.finishReason?.catch(() => null),
+      ])
+        .then(async ([rawUsage, responseObject, finishReason]) => {
           const endTime = Date.now();
 
           if (debug || isDebugMode()) {
             console.log("\n🔍 [Fallom Debug] streamObject raw usage:", JSON.stringify(rawUsage, null, 2));
+            console.log("🔍 [Fallom Debug] streamObject response object:", JSON.stringify(responseObject)?.slice(0, 100));
+            console.log("🔍 [Fallom Debug] streamObject finish reason:", finishReason);
           }
 
           let providerMetadata = result?.experimental_providerMetadata;
@@ -76,6 +82,14 @@ export function createStreamObjectWrapper(
               model: modelId,
               schema: params?.schema ? "provided" : undefined,
             });
+            
+            // Include response object and finish reason
+            if (responseObject || finishReason) {
+              attributes["fallom.raw.response"] = JSON.stringify({
+                object: responseObject,
+                finishReason: finishReason,
+              });
+            }
           }
 
           if (rawUsage) {
