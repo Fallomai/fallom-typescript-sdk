@@ -1,6 +1,6 @@
 # @fallom/trace
 
-Model A/B testing, prompt management, and tracing for LLM applications. Zero latency, production-ready.
+Model A/B testing, prompt management, and tracing for LLM applications. Zero latency, production-ready, concurrent-safe.
 
 ## Installation
 
@@ -12,127 +12,57 @@ npm install @fallom/trace
 
 ```typescript
 import fallom from "@fallom/trace";
-import OpenAI from "openai";
+import * as ai from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
 
-// Initialize Fallom
+// Initialize Fallom once
 await fallom.init({ apiKey: "your-api-key" });
 
-// Wrap your LLM client for automatic tracing
-const openai = fallom.trace.wrapOpenAI(new OpenAI());
-
-// Set session context
-fallom.trace.setSession("my-agent", sessionId);
-
-// All LLM calls are now automatically traced!
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  messages: [{ role: "user", content: "Hello!" }],
-});
-```
-
-## Model A/B Testing
-
-Run A/B tests on models with zero latency. Same session always gets same model (sticky assignment).
-
-```typescript
-import { models } from "@fallom/trace";
-
-// Get assigned model for this session
-const model = await models.get("summarizer-config", sessionId);
-// Returns: "gpt-4o" or "claude-3-5-sonnet" based on your config weights
-
-const response = await openai.chat.completions.create({ model, ... });
-```
-
-### Fallback for Resilience
-
-```typescript
-const model = await models.get("my-config", sessionId, {
-  fallback: "gpt-4o-mini", // Used if config not found or Fallom unreachable
-});
-```
-
-## Prompt Management
-
-Manage prompts centrally and A/B test them with zero latency.
-
-### Basic Prompt Retrieval
-
-```typescript
-import { prompts } from "@fallom/trace";
-
-// Get a managed prompt (with template variables)
-const prompt = await prompts.get("onboarding", {
-  variables: { userName: "John", company: "Acme" },
+// Create a session for this request/conversation
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+  customerId: "user-456", // optional
 });
 
-// Use the prompt with any LLM
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  messages: [
-    { role: "system", content: prompt.system },
-    { role: "user", content: prompt.user },
-  ],
-});
-```
+// Wrap AI SDK - all calls are now traced!
+const { generateText } = session.wrapAISDK(ai);
 
-The `prompt` object contains:
-- `key`: The prompt key
-- `version`: The prompt version
-- `system`: The system prompt (with variables replaced)
-- `user`: The user template (with variables replaced)
-
-### Prompt A/B Testing
-
-Run experiments on different prompt versions:
-
-```typescript
-import { prompts } from "@fallom/trace";
-
-// Get prompt from A/B test (sticky assignment based on sessionId)
-const prompt = await prompts.getAB("onboarding-test", sessionId, {
-  variables: { userName: "John" },
-});
-
-// prompt.abTestKey and prompt.variantIndex are set
-// for analytics in your dashboard
-```
-
-### Version Pinning
-
-```typescript
-// Use latest version (default)
-const prompt = await prompts.get("my-prompt");
-
-// Pin to specific version
-const prompt = await prompts.get("my-prompt", { version: 2 });
-```
-
-### Automatic Trace Tagging
-
-When you call `prompts.get()` or `prompts.getAB()`, the next LLM call is automatically tagged with the prompt information. This allows you to see which prompts are used in your traces without any extra code.
-
-```typescript
-// Get prompt - sets up auto-tagging for next LLM call
-const prompt = await prompts.get("onboarding", {
-  variables: { userName: "John" },
-});
-
-// This call is automatically tagged with promptKey, promptVersion, etc.
-const response = await openai.chat.completions.create({
-  model: "gpt-4o",
-  messages: [
-    { role: "system", content: prompt.system },
-    { role: "user", content: prompt.user },
-  ],
+const response = await generateText({
+  model: createOpenAI()("gpt-4o"),
+  prompt: "Hello!",
 });
 ```
 
 ## Tracing
 
-Wrap your LLM client once, all calls are automatically traced.
+### Vercel AI SDK
 
-### OpenAI (+ OpenRouter, Azure, LiteLLM, etc.)
+```typescript
+import * as ai from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import fallom from "@fallom/trace";
+
+await fallom.init({ apiKey: "your-api-key" });
+
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+});
+
+// Option 1: Wrap the SDK (our style)
+const { generateText, streamText } = session.wrapAISDK(ai);
+
+await generateText({ model: createOpenAI()("gpt-4o"), prompt: "Hello!" });
+await streamText({ model: createAnthropic()("claude-3-5-sonnet"), prompt: "Hi!" });
+
+// Option 2: Wrap the model directly (PostHog style)
+const model = session.traceModel(createOpenAI()("gpt-4o"));
+await ai.generateText({ model, prompt: "Hello!" });
+```
+
+### OpenAI SDK
 
 ```typescript
 import OpenAI from "openai";
@@ -140,24 +70,26 @@ import fallom from "@fallom/trace";
 
 await fallom.init({ apiKey: "your-api-key" });
 
-// Works with any OpenAI-compatible API
-const openai = fallom.trace.wrapOpenAI(
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+});
+
+// Works with any OpenAI-compatible API (OpenRouter, Azure, LiteLLM, etc.)
+const openai = session.wrapOpenAI(
   new OpenAI({
-    baseURL: "https://openrouter.ai/api/v1", // or Azure, LiteLLM, etc.
+    baseURL: "https://openrouter.ai/api/v1", // optional
     apiKey: "your-provider-key",
   })
 );
 
-fallom.trace.setSession("my-config", sessionId);
-
-// Automatically traced!
 const response = await openai.chat.completions.create({
   model: "gpt-4o",
   messages: [{ role: "user", content: "Hello!" }],
 });
 ```
 
-### Anthropic (Claude)
+### Anthropic SDK
 
 ```typescript
 import Anthropic from "@anthropic-ai/sdk";
@@ -165,13 +97,16 @@ import fallom from "@fallom/trace";
 
 await fallom.init({ apiKey: "your-api-key" });
 
-const anthropic = fallom.trace.wrapAnthropic(new Anthropic());
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+});
 
-fallom.trace.setSession("my-config", sessionId);
+const anthropic = session.wrapAnthropic(new Anthropic());
 
-// Automatically traced!
 const response = await anthropic.messages.create({
   model: "claude-3-5-sonnet-20241022",
+  max_tokens: 1024,
   messages: [{ role: "user", content: "Hello!" }],
 });
 ```
@@ -184,15 +119,103 @@ import fallom from "@fallom/trace";
 
 await fallom.init({ apiKey: "your-api-key" });
 
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+});
+
 const genAI = new GoogleGenerativeAI(apiKey);
-const model = fallom.trace.wrapGoogleAI(
+const model = session.wrapGoogleAI(
   genAI.getGenerativeModel({ model: "gemini-pro" })
 );
 
-fallom.trace.setSession("my-config", sessionId);
-
-// Automatically traced!
 const response = await model.generateContent("Hello!");
+```
+
+## Concurrent Sessions
+
+Sessions are isolated - safe for concurrent requests:
+
+```typescript
+async function handleRequest(userId: string, conversationId: string) {
+  const session = fallom.session({
+    configKey: "my-agent",
+    sessionId: conversationId,
+    customerId: userId,
+  });
+
+  const { generateText } = session.wrapAISDK(ai);
+  
+  // This session's context is isolated
+  return await generateText({ model: openai("gpt-4o"), prompt: "..." });
+}
+
+// Safe to run concurrently!
+await Promise.all([
+  handleRequest("user-1", "conv-1"),
+  handleRequest("user-2", "conv-2"),
+  handleRequest("user-3", "conv-3"),
+]);
+```
+
+## Model A/B Testing
+
+Run A/B tests on models with zero latency. Same session always gets same model (sticky assignment).
+
+```typescript
+const session = fallom.session({
+  configKey: "summarizer",
+  sessionId: "session-123",
+});
+
+// Get assigned model for this session
+const model = await session.getModel({ fallback: "gpt-4o-mini" });
+// Returns: "gpt-4o" or "claude-3-5-sonnet" based on your config weights
+
+const { generateText } = session.wrapAISDK(ai);
+await generateText({ model: createOpenAI()(model), prompt: "..." });
+```
+
+### Standalone Model Assignment
+
+```typescript
+import { models } from "@fallom/trace";
+
+// Get model without creating a session
+const model = await models.get("summarizer-config", sessionId, {
+  fallback: "gpt-4o-mini",
+});
+```
+
+## Prompt Management
+
+Manage prompts centrally and A/B test them.
+
+```typescript
+import { prompts } from "@fallom/trace";
+
+// Get a managed prompt (with template variables)
+const prompt = await prompts.get("onboarding", {
+  variables: { userName: "John", company: "Acme" },
+});
+
+// Use the prompt
+const response = await openai.chat.completions.create({
+  model: "gpt-4o",
+  messages: [
+    { role: "system", content: prompt.system },
+    { role: "user", content: prompt.user },
+  ],
+});
+```
+
+### Prompt A/B Testing
+
+```typescript
+// Get prompt from A/B test (sticky assignment)
+const prompt = await prompts.getAB("onboarding-test", sessionId, {
+  variables: { userName: "John" },
+});
 ```
 
 ## What Gets Traced
@@ -203,22 +226,9 @@ For each LLM call, Fallom automatically captures:
 - ✅ Token counts (prompt, completion, total)
 - ✅ Input/output content (can be disabled)
 - ✅ Errors
-- ✅ Config key + session ID (for A/B analysis)
-- ✅ Prompt key + version (when using prompt management)
-
-## Custom Metrics
-
-Record business metrics for your A/B tests:
-
-```typescript
-import { trace } from "@fallom/trace";
-
-trace.span({
-  outlier_score: 0.8,
-  user_satisfaction: 4,
-  conversion: true,
-});
-```
+- ✅ Config key + session ID
+- ✅ Customer ID
+- ✅ Time to first token (streaming)
 
 ## Configuration
 
@@ -244,79 +254,106 @@ fallom.init({ captureContent: false });
 
 ### `fallom.init(options?)`
 
-Initialize the SDK.
+Initialize the SDK. Call once at app startup.
 
-### `fallom.trace.wrapOpenAI(client)`
+```typescript
+await fallom.init({
+  apiKey: "your-api-key",     // or FALLOM_API_KEY env var
+  captureContent: true,        // capture prompts/completions
+  debug: false,                // enable debug logging
+});
+```
 
-Wrap OpenAI client for automatic tracing. Works with any OpenAI-compatible API.
+### `fallom.session(options)`
 
-### `fallom.trace.wrapAnthropic(client)`
+Create a session-scoped tracer.
 
-Wrap Anthropic client for automatic tracing.
+```typescript
+const session = fallom.session({
+  configKey: "my-agent",       // required: your config name
+  sessionId: "session-123",    // required: conversation/request ID
+  customerId: "user-456",      // optional: user identifier
+});
+```
 
-### `fallom.trace.wrapGoogleAI(model)`
+Returns a `FallomSession` with these methods:
 
-Wrap Google AI model for automatic tracing.
-
-### `fallom.trace.setSession(configKey, sessionId)`
-
-Set session context for tracing.
+| Method | Description |
+|--------|-------------|
+| `wrapAISDK(ai)` | Wrap Vercel AI SDK |
+| `wrapOpenAI(client)` | Wrap OpenAI client |
+| `wrapAnthropic(client)` | Wrap Anthropic client |
+| `wrapGoogleAI(model)` | Wrap Google AI model |
+| `wrapMastraAgent(agent)` | Wrap Mastra agent |
+| `traceModel(model)` | Wrap a model directly (PostHog style) |
+| `getModel(options?)` | Get A/B tested model assignment |
+| `getContext()` | Get the session context |
 
 ### `fallom.models.get(configKey, sessionId, options?)`
 
-Get model assignment for A/B testing. Returns `Promise<string>`.
+Get model assignment for A/B testing.
+
+```typescript
+const model = await models.get("my-config", sessionId, {
+  fallback: "gpt-4o-mini",  // used if config not found
+  version: 2,               // pin to specific config version
+});
+```
 
 ### `fallom.prompts.get(promptKey, options?)`
 
-Get a managed prompt. Returns `Promise<PromptResult>`.
-- `promptKey`: Your prompt key from the dashboard
-- `options.variables`: Template variables (e.g., `{ userName: "John" }`)
-- `options.version`: Pin to specific version (default: latest)
+Get a managed prompt.
+
+```typescript
+const prompt = await prompts.get("my-prompt", {
+  variables: { name: "John" },
+  version: 2,  // optional: pin version
+});
+// Returns: { key, version, system, user }
+```
 
 ### `fallom.prompts.getAB(abTestKey, sessionId, options?)`
 
-Get a prompt from an A/B test. Returns `Promise<PromptResult>`.
-- `abTestKey`: Your A/B test key from the dashboard
-- `sessionId`: Session ID for sticky assignment
-- `options.variables`: Template variables
+Get a prompt from an A/B test.
 
-### `fallom.trace.span(data)`
-
-Record custom business metrics.
-
-## Testing
-
-Run the test suite:
-
-```bash
-cd sdk/typescript-sdk
-npm install
-npm test
+```typescript
+const prompt = await prompts.getAB("my-test", sessionId, {
+  variables: { name: "John" },
+});
+// Returns: { key, version, system, user, abTestKey, variantIndex }
 ```
 
-## Deploying
+## Mastra Integration
 
-To publish a new version to npm:
+```typescript
+import { FallomExporter } from "@fallom/trace";
+import { Mastra } from "@mastra/core/mastra";
 
-```bash
-cd sdk/typescript-sdk
+const session = fallom.session({
+  configKey: "my-agent",
+  sessionId: "session-123",
+});
 
-# Update version in package.json
-# Then:
-npm run build
-npm publish --access public
-
-# Or use convenience scripts:
-npm run publish:patch  # 0.1.0 -> 0.1.1
-npm run publish:minor  # 0.1.0 -> 0.2.0
-npm run publish:major  # 0.1.0 -> 1.0.0
+const mastra = new Mastra({
+  agents: { myAgent },
+  telemetry: {
+    serviceName: "my-agent",
+    enabled: true,
+    export: {
+      type: "custom",
+      exporter: new FallomExporter({
+        session: session.getContext(),
+      }),
+    },
+  },
+});
 ```
 
 ## Requirements
 
 - Node.js >= 18.0.0
 
-Works with ESM and CommonJS. Works with tsx, ts-node, Bun, and compiled JavaScript.
+Works with ESM and CommonJS. Compatible with tsx, ts-node, Bun, and compiled JavaScript.
 
 ## License
 

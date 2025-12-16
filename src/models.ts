@@ -12,7 +12,6 @@
  */
 
 import { createHash } from "crypto";
-import { setSession } from "./trace";
 
 // Module state
 let apiKey: string | null = null;
@@ -189,9 +188,6 @@ async function fetchSpecificVersion(
  *
  * Same session_id always returns same model (sticky assignment).
  *
- * Also automatically sets trace context, so all subsequent LLM calls
- * are tagged with this session.
- *
  * @param configKey - Your config name (e.g., "linkedin-agent")
  * @param sessionId - Your session/conversation ID (must be consistent)
  * @param options - Optional settings
@@ -240,7 +236,7 @@ export async function get(
         console.warn(
           `[Fallom WARNING] Config '${configKey}' not found, using fallback model: ${fallback}`
         );
-        return returnWithTrace(configKey, sessionId, fallback, 0);
+        return returnModel(configKey, sessionId, fallback, 0);
       }
       throw new Error(
         `Config '${configKey}' not found. Check that it exists in your Fallom dashboard.`
@@ -265,7 +261,7 @@ export async function get(
           console.warn(
             `[Fallom WARNING] Config '${configKey}' version ${version} not found, using fallback: ${fallback}`
           );
-          return returnWithTrace(configKey, sessionId, fallback, 0);
+          return returnModel(configKey, sessionId, fallback, 0);
         }
         throw new Error(`Config '${configKey}' version ${version} not found.`);
       }
@@ -279,7 +275,7 @@ export async function get(
           console.warn(
             `[Fallom WARNING] Config '${configKey}' has no cached version, using fallback: ${fallback}`
           );
-          return returnWithTrace(configKey, sessionId, fallback, 0);
+          return returnModel(configKey, sessionId, fallback, 0);
         }
         throw new Error(`Config '${configKey}' has no cached version.`);
       }
@@ -327,7 +323,7 @@ export async function get(
     }
 
     log(`✅ Assigned model: ${assignedModel}`);
-    return returnWithTrace(configKey, sessionId, assignedModel, configVersion);
+    return returnModel(configKey, sessionId, assignedModel, configVersion);
   } catch (e) {
     if (e instanceof Error && e.message.includes("not found")) {
       throw e; // Re-throw "not found" errors
@@ -337,25 +333,18 @@ export async function get(
       console.warn(
         `[Fallom WARNING] Error getting model for '${configKey}': ${e}. Using fallback: ${fallback}`
       );
-      return returnWithTrace(configKey, sessionId, fallback, 0);
+      return returnModel(configKey, sessionId, fallback, 0);
     }
     throw e;
   }
 }
 
-function returnWithTrace(
+function returnModel(
   configKey: string,
   sessionId: string,
   model: string,
   version: number
 ): string {
-  // Auto-set trace context so subsequent calls are tagged
-  try {
-    setSession(configKey, sessionId);
-  } catch {
-    // Tracing might not be initialized, that's ok
-  }
-
   // Record session async (non-blocking)
   if (version > 0) {
     recordSession(configKey, version, sessionId, model).catch(() => {});

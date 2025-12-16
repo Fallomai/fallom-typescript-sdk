@@ -3,35 +3,30 @@
  *
  * @example
  * ```typescript
- * import fallom from 'fallom';
+ * import fallom from '@fallom/trace';
+ * import * as ai from 'ai';
+ * import { createOpenAI } from '@ai-sdk/openai';
  *
- * // Initialize (call this early, before LLM imports if possible)
- * fallom.init({ apiKey: "your-api-key" });
+ * // Initialize once
+ * await fallom.init({ apiKey: "your-api-key" });
  *
- * // Set session context for tracing
- * fallom.trace.setSession("my-agent", sessionId);
- *
- * // Get A/B tested model
- * const model = await fallom.models.get("my-config", sessionId, {
- *   fallback: "gpt-4o-mini"
+ * // Create a session for this conversation/request
+ * const session = fallom.session({
+ *   configKey: "my-agent",
+ *   sessionId: "session-123",
+ *   customerId: "user-456",
  * });
  *
- * // Get managed prompts (with optional A/B testing)
- * const prompt = await fallom.prompts.get("onboarding", {
- *   variables: { userName: "John" }
- * });
+ * // Option 1: Wrap the AI SDK (our style)
+ * const { generateText } = session.wrapAISDK(ai);
+ * await generateText({ model: openai("gpt-4o"), prompt: "Hello!" });
  *
- * // Use with OpenAI
- * const response = await openai.chat.completions.create({
- *   model,
- *   messages: [
- *     { role: "system", content: prompt.system },
- *     { role: "user", content: prompt.user }
- *   ]
- * });
+ * // Option 2: Wrap the model directly (PostHog style)
+ * const model = session.traceModel(openai("gpt-4o"));
+ * await ai.generateText({ model, prompt: "Hello!" });
  *
- * // Record custom metrics
- * fallom.trace.span({ user_satisfaction: 5 });
+ * // Get A/B tested model within session
+ * const modelName = await session.getModel({ fallback: "gpt-4o-mini" });
  * ```
  */
 
@@ -41,6 +36,10 @@ export * as prompts from "./prompts";
 export { init } from "./init";
 export type { InitOptions } from "./init";
 export type { PromptResult } from "./prompts";
+
+// Session-scoped tracing exports
+export { session, FallomSession } from "./trace";
+export type { SessionOptions, SessionContext } from "./trace";
 
 // Mastra integration
 export {
@@ -56,10 +55,12 @@ import * as trace from "./trace";
 import * as models from "./models";
 import * as prompts from "./prompts";
 import { init } from "./init";
+import { session } from "./trace";
 
 export default {
   init,
   trace,
   models,
   prompts,
+  session,
 };

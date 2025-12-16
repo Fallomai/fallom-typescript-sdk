@@ -2,7 +2,7 @@
  * Fallom Exporter for Mastra
  *
  * Custom OpenTelemetry exporter that sends traces from Mastra agents to Fallom.
- * Reads session context from the shared trace module (set via trace.setSession()).
+ * Session context should be passed to the exporter constructor.
  *
  * Usage with Mastra:
  * ```typescript
@@ -12,7 +12,14 @@
  * // Initialize trace module
  * await trace.init({ apiKey: process.env.FALLOM_API_KEY });
  *
- * // Create Mastra with Fallom exporter
+ * // Create session for this request
+ * const session = trace.session({
+ *   configKey: "my-app",
+ *   sessionId: "session-123",
+ *   customerId: "user-456"
+ * });
+ *
+ * // Create Mastra with Fallom exporter (pass session context)
  * const mastra = new Mastra({
  *   agents: { myAgent },
  *   telemetry: {
@@ -20,22 +27,22 @@
  *     enabled: true,
  *     export: {
  *       type: "custom",
- *       exporter: new FallomExporter(),
+ *       exporter: new FallomExporter({
+ *         session: session.getContext()
+ *       }),
  *     },
  *   },
  * });
  *
- * // In your request handler:
- * trace.setSession("my-app", "session-123", "user-456");
  * const result = await mastra.getAgent("myAgent").generate("Hello!");
  * ```
  */
 
 import type { SpanExporter, ReadableSpan } from "@opentelemetry/sdk-trace-base";
 import { ExportResult, ExportResultCode } from "@opentelemetry/core";
-import { getSession } from "./trace";
+import type { SessionContext } from "./trace";
 
-// Prompt context (set per-request, similar to session)
+// Prompt context (set per-request)
 interface PromptContext {
   promptKey?: string;
   promptVersion?: number;
@@ -43,7 +50,7 @@ interface PromptContext {
   promptVariantIndex?: number;
 }
 
-// Module-level prompt context (will be enhanced with AsyncLocalStorage later if needed)
+// Module-level prompt context
 let promptContext: PromptContext = {};
 
 export interface FallomExporterOptions {
@@ -53,6 +60,8 @@ export interface FallomExporterOptions {
   baseUrl?: string;
   /** Enable debug logging */
   debug?: boolean;
+  /** Session context for tracing */
+  session?: SessionContext;
 }
 
 /**
@@ -94,23 +103,28 @@ export function clearMastraPrompt(): void {
 /**
  * OpenTelemetry SpanExporter that sends traces to Fallom.
  *
- * Reads session context from trace.setSession() automatically.
+ * Pass session context via constructor options.
  * Compatible with Mastra's custom exporter interface.
  */
 export class FallomExporter implements SpanExporter {
   private apiKey: string;
   private baseUrl: string;
   private debug: boolean;
+  private session?: SessionContext;
   private pendingExports: Promise<void>[] = [];
 
   constructor(options: FallomExporterOptions = {}) {
     this.apiKey = options.apiKey ?? process.env.FALLOM_API_KEY ?? "";
     this.baseUrl = options.baseUrl ?? "https://traces.fallom.com";
     this.debug = options.debug ?? false;
+    this.session = options.session;
 
-    console.log("[FallomExporter] Constructor called, debug:", this.debug);
-    console.log("[FallomExporter] API key present:", !!this.apiKey);
-    console.log("[FallomExporter] Base URL:", this.baseUrl);
+    if (this.debug) {
+      console.log("[FallomExporter] Constructor called");
+      console.log("[FallomExporter] API key present:", !!this.apiKey);
+      console.log("[FallomExporter] Base URL:", this.baseUrl);
+      console.log("[FallomExporter] Session:", this.session);
+    }
 
     if (!this.apiKey) {
       console.warn(
@@ -139,7 +153,6 @@ export class FallomExporter implements SpanExporter {
 
     this.log(`Exporting ${spans.length} spans...`);
 
-    // Log span names for debugging
     if (this.debug) {
       for (const span of spans) {
         this.log(`  - ${span.name}`, {
@@ -187,10 +200,6 @@ export class FallomExporter implements SpanExporter {
    * Send spans to Fallom's OTLP endpoint.
    */
   private async sendSpans(spans: ReadableSpan[]): Promise<void> {
-    // Get current session context from the shared trace module
-    const session = getSession();
-
-    // Convert spans to OTLP JSON format
     const resourceSpans = this.spansToOtlpJson(spans);
 
     const headers: Record<string, string> = {
@@ -198,15 +207,15 @@ export class FallomExporter implements SpanExporter {
       Authorization: `Bearer ${this.apiKey}`,
     };
 
-    // Add session context headers (from trace.setSession())
-    if (session?.configKey) {
-      headers["X-Fallom-Config-Key"] = session.configKey;
+    // Add session context headers
+    if (this.session?.configKey) {
+      headers["X-Fallom-Config-Key"] = this.session.configKey;
     }
-    if (session?.sessionId) {
-      headers["X-Fallom-Session-Id"] = session.sessionId;
+    if (this.session?.sessionId) {
+      headers["X-Fallom-Session-Id"] = this.session.sessionId;
     }
-    if (session?.customerId) {
-      headers["X-Fallom-Customer-Id"] = session.customerId;
+    if (this.session?.customerId) {
+      headers["X-Fallom-Customer-Id"] = this.session.customerId;
     }
 
     // Add prompt tracking headers
@@ -249,7 +258,6 @@ export class FallomExporter implements SpanExporter {
    * Convert OpenTelemetry spans to OTLP JSON format.
    */
   private spansToOtlpJson(spans: ReadableSpan[]): any[] {
-    // Group spans by resource
     const resourceMap = new Map<string, ReadableSpan[]>();
 
     for (const span of spans) {
