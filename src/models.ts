@@ -38,16 +38,125 @@ interface Variant {
   weight: number;
 }
 
+/**
+ * Individual target - assigns specific users to specific variants
+ */
+interface IndividualTarget {
+  /** The field to match (e.g., "customerId", "userId", "plan") */
+  field: string;
+  /** The value to match */
+  value: string;
+  /** Which variant index to assign (0-based, matches variants array) */
+  variantIndex: number;
+}
+
+/**
+ * Rule-based targeting with conditions
+ */
+interface TargetingRule {
+  /** Conditions that must ALL match */
+  conditions: Array<{
+    field: string;
+    operator: "eq" | "neq" | "in" | "nin" | "contains" | "startsWith" | "endsWith";
+    value: string | string[];
+  }>;
+  /** Which variant index to assign */
+  variantIndex: number;
+}
+
+/**
+ * Targeting configuration for user-level model assignment
+ */
+interface Targeting {
+  /** Individual user targets - checked first */
+  individualTargets?: IndividualTarget[];
+  /** Rule-based targeting - checked second */
+  rules?: TargetingRule[];
+  /** Whether targeting is enabled (default: true if targeting exists) */
+  enabled?: boolean;
+}
+
 interface Config {
   key: string;
   version: number;
   variants: Variant[] | Record<string, Variant>;
+  targeting?: Targeting | null;
 }
 
 function log(msg: string): void {
   if (debugMode) {
     console.log(`[Fallom] ${msg}`);
   }
+}
+
+/**
+ * Evaluate targeting rules to find a matching variant.
+ * Returns the variant index if matched, or null if no match.
+ */
+function evaluateTargeting(
+  targeting: Targeting | null | undefined,
+  customerId: string | undefined,
+  context: Record<string, string> | undefined
+): number | null {
+  if (!targeting || targeting.enabled === false) {
+    return null;
+  }
+
+  // Build the evaluation context from customerId and context
+  const evalContext: Record<string, string> = {
+    ...(context || {}),
+    ...(customerId ? { customerId } : {}),
+  };
+
+  log(`Evaluating targeting with context: ${JSON.stringify(evalContext)}`);
+
+  // 1. Check individual targets first (exact match)
+  if (targeting.individualTargets) {
+    for (const target of targeting.individualTargets) {
+      const fieldValue = evalContext[target.field];
+      if (fieldValue === target.value) {
+        log(`Individual target matched: ${target.field}=${target.value} -> variant ${target.variantIndex}`);
+        return target.variantIndex;
+      }
+    }
+  }
+
+  // 2. Check rule-based targeting
+  if (targeting.rules) {
+    for (const rule of targeting.rules) {
+      const allConditionsMatch = rule.conditions.every((condition) => {
+        const fieldValue = evalContext[condition.field];
+        if (fieldValue === undefined) return false;
+
+        switch (condition.operator) {
+          case "eq":
+            return fieldValue === condition.value;
+          case "neq":
+            return fieldValue !== condition.value;
+          case "in":
+            return Array.isArray(condition.value) && condition.value.includes(fieldValue);
+          case "nin":
+            return Array.isArray(condition.value) && !condition.value.includes(fieldValue);
+          case "contains":
+            return typeof condition.value === "string" && fieldValue.includes(condition.value);
+          case "startsWith":
+            return typeof condition.value === "string" && fieldValue.startsWith(condition.value);
+          case "endsWith":
+            return typeof condition.value === "string" && fieldValue.endsWith(condition.value);
+          default:
+            return false;
+        }
+      });
+
+      if (allConditionsMatch) {
+        log(`Rule matched: ${JSON.stringify(rule.conditions)} -> variant ${rule.variantIndex}`);
+        return rule.variantIndex;
+      }
+    }
+  }
+
+  log("No targeting rules matched, falling back to weighted random");
+  return null;
 }
 
 /**
@@ -193,6 +302,8 @@ async function fetchSpecificVersion(
  * @param options - Optional settings
  * @param options.version - Pin to specific version (1, 2, etc). undefined = latest
  * @param options.fallback - Model to return if config not found or Fallom is down
+ * @param options.customerId - User ID for individual targeting (e.g., "user-123")
+ * @param options.context - Additional context for rule-based targeting (e.g., { plan: "enterprise" })
  * @param options.debug - Enable debug logging
  * @returns Model string (e.g., "claude-opus", "gpt-4o")
  * @throws Error if config not found AND no fallback provided
@@ -203,10 +314,12 @@ export async function get(
   options: {
     version?: number;
     fallback?: string;
+    customerId?: string;
+    context?: Record<string, string>;
     debug?: boolean;
   } = {}
 ): Promise<string> {
-  const { version, fallback, debug = false } = options;
+  const { version, fallback, customerId, context, debug = false } = options;
   debugMode = debug;
 
   ensureInit();
@@ -295,7 +408,15 @@ export async function get(
       )}`
     );
 
-    // Deterministic assignment from session_id hash
+    // 1. First, try targeting rules (if customerId or context provided)
+    const targetedVariantIndex = evaluateTargeting(config.targeting, customerId, context);
+    if (targetedVariantIndex !== null && variants[targetedVariantIndex]) {
+      const assignedModel = variants[targetedVariantIndex].model;
+      log(`✅ Assigned model via targeting: ${assignedModel}`);
+      return returnModel(configKey, sessionId, assignedModel, configVersion);
+    }
+
+    // 2. Fall back to deterministic assignment from session_id hash
     // Same session_id always gets same model (sticky)
     // Using 1M buckets for 0.01% granularity
     const hashBytes = createHash("md5").update(sessionId).digest();
@@ -322,7 +443,7 @@ export async function get(
       }
     }
 
-    log(`✅ Assigned model: ${assignedModel}`);
+    log(`✅ Assigned model via weighted random: ${assignedModel}`);
     return returnModel(configKey, sessionId, assignedModel, configVersion);
   } catch (e) {
     if (e instanceof Error && e.message.includes("not found")) {

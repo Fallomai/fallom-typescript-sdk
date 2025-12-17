@@ -187,6 +187,59 @@ const model = await models.get("summarizer-config", sessionId, {
 });
 ```
 
+### User Targeting (LaunchDarkly-style)
+
+Override weighted distribution for specific users or segments. Targeting rules are evaluated client-side for zero latency.
+
+```typescript
+import { models } from "@fallom/trace";
+
+// Target specific users to specific variants
+const model = await models.get("my-config", sessionId, {
+  fallback: "gpt-4o-mini",
+  customerId: "user-123",           // For individual targeting
+  context: {                         // For rule-based targeting
+    plan: "enterprise",
+    region: "us-west",
+  },
+});
+```
+
+**Evaluation order:**
+1. **Individual Targets** - Exact match on `customerId` or any field
+2. **Rules** - Condition-based targeting (all conditions must match)
+3. **Fallback** - Weighted random distribution
+
+**Configure targeting in the dashboard:**
+
+```json
+{
+  "enabled": true,
+  "individualTargets": [
+    { "field": "customerId", "value": "vip-user-123", "variantIndex": 1 }
+  ],
+  "rules": [
+    {
+      "conditions": [
+        { "field": "plan", "operator": "eq", "value": "enterprise" }
+      ],
+      "variantIndex": 1
+    }
+  ]
+}
+```
+
+**Supported operators:**
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `eq` | Equals | `plan = "enterprise"` |
+| `neq` | Not equals | `plan ≠ "free"` |
+| `in` | In list | `plan in ["enterprise", "business"]` |
+| `nin` | Not in list | `region not in ["cn", "ru"]` |
+| `contains` | Contains substring | `email contains "@acme.com"` |
+| `startsWith` | Starts with | `region starts with "eu-"` |
+| `endsWith` | Ends with | `email ends with ".gov"` |
+
 ## Prompt Management
 
 Manage prompts centrally and A/B test them.
@@ -295,10 +348,21 @@ Get model assignment for A/B testing.
 
 ```typescript
 const model = await models.get("my-config", sessionId, {
-  fallback: "gpt-4o-mini",  // used if config not found
-  version: 2,               // pin to specific config version
+  fallback: "gpt-4o-mini",           // used if config not found
+  version: 2,                         // pin to specific config version
+  customerId: "user-123",             // for individual targeting
+  context: { plan: "enterprise" },    // for rule-based targeting
+  debug: false,                       // enable debug logging
 });
 ```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `fallback` | `string` | Model to return if config not found |
+| `version` | `number` | Pin to specific config version |
+| `customerId` | `string` | User ID for individual targeting |
+| `context` | `Record<string, string>` | Context for rule-based targeting |
+| `debug` | `boolean` | Enable debug logging |
 
 ### `fallom.prompts.get(promptKey, options?)`
 
