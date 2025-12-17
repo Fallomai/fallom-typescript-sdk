@@ -45,11 +45,12 @@
   "dependencies": {
     "@opentelemetry/api": "^1.7.0",
     "@opentelemetry/core": "^1.19.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.46.0",
     "@opentelemetry/sdk-node": "^0.46.0",
     "@opentelemetry/sdk-trace-base": "^1.19.0",
     "@opentelemetry/sdk-trace-node": "^1.19.0",
-    "@opentelemetry/exporter-trace-otlp-http": "^0.46.0",
     "@traceloop/instrumentation-openai": "^0.11.0",
+    "openai": "^6.14.0",
     "tslib": "^2.6.0"
   },
   "devDependencies": {
