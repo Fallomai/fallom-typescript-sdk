@@ -3,6 +3,9 @@
  * 
  * SDK is "dumb" - just captures raw request/response and sends to microservice.
  * All parsing/extraction happens server-side for easier maintenance.
+ * 
+ * IMPORTANT: You must await this function, e.g.:
+ *   const { partialObjectStream } = await streamObject({...})
  */
 
 import {
