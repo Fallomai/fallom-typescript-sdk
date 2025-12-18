@@ -87,6 +87,21 @@ export function wrapAnthropic<
         attributes["fallom.raw.usage"] = JSON.stringify(response.usage);
       }
 
+      // Build waterfall timing data
+      const waterfallTimings = {
+        requestStart: 0,
+        requestEnd: endTime - startTime,
+        responseEnd: endTime - startTime,
+        totalDurationMs: endTime - startTime,
+        // Anthropic tool calls (if present)
+        toolCalls: toolUseBlocks.map((b: any) => ({
+          id: b.id,
+          name: b.name,
+          callTime: 0, // All tool calls happen at once in non-streaming
+        })),
+      };
+      attributes["fallom.raw.timings"] = JSON.stringify(waterfallTimings);
+
       // Get prompt context if set (one-shot, clears after read)
       const promptCtx = getPromptContext();
 

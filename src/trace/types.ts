@@ -20,6 +20,36 @@ export interface TraceContext {
 }
 
 /**
+ * Detailed timing breakdown for waterfall visualization.
+ * All times are in milliseconds relative to requestStart (which is 0).
+ */
+export interface WaterfallTimings {
+  // Overall request timing
+  requestStart: number; // Always 0 (baseline)
+  requestEnd: number; // When response started (headers received or first byte)
+  responseEnd: number; // When response fully received
+
+  // Streaming-specific (optional)
+  firstTokenTime?: number; // When first content token arrived
+
+  // Tool call timing (for agent flows with multi-step)
+  steps?: Array<{
+    stepIndex: number;
+    stepType: string;
+    startTime: number; // Relative to requestStart
+    endTime: number;
+    toolCalls?: Array<{
+      id: string;
+      name: string;
+      callTime: number; // When LLM decided to call this tool
+      executeStartTime?: number; // When tool execution started (if we can capture)
+      executeEndTime?: number; // When tool execution finished
+      resultTime?: number; // When result was processed by LLM
+    }>;
+  }>;
+}
+
+/**
  * Data structure for a trace sent to the Fallom API.
  * 
  * SDK sends minimal structured data + raw attributes.

@@ -82,6 +82,23 @@ export function wrapOpenAI<
         attributes["fallom.raw.usage"] = JSON.stringify(response.usage);
       }
 
+      // Build waterfall timing data
+      const waterfallTimings = {
+        requestStart: 0,
+        requestEnd: endTime - startTime,
+        responseEnd: endTime - startTime,
+        totalDurationMs: endTime - startTime,
+        // OpenAI tool calls (if present)
+        toolCalls: response?.choices?.[0]?.message?.tool_calls?.map(
+          (tc: any, idx: number) => ({
+            id: tc.id,
+            name: tc.function?.name,
+            callTime: 0, // All tool calls happen at once in non-streaming
+          })
+        ),
+      };
+      attributes["fallom.raw.timings"] = JSON.stringify(waterfallTimings);
+
       // Get prompt context if set (one-shot, clears after read)
       const promptCtx = getPromptContext();
 

@@ -85,6 +85,20 @@ export function wrapGoogleAI<
         attributes["fallom.raw.usage"] = JSON.stringify(result.usageMetadata);
       }
 
+      // Build waterfall timing data
+      const waterfallTimings = {
+        requestStart: 0,
+        requestEnd: endTime - startTime,
+        responseEnd: endTime - startTime,
+        totalDurationMs: endTime - startTime,
+        // Google AI function calls (if present)
+        toolCalls: functionCalls.map((fc: any) => ({
+          name: fc.name,
+          callTime: 0, // All tool calls happen at once in non-streaming
+        })),
+      };
+      attributes["fallom.raw.timings"] = JSON.stringify(waterfallTimings);
+
       // Get prompt context if set (one-shot, clears after read)
       const promptCtx = getPromptContext();
 
