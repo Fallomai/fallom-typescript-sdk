@@ -168,18 +168,18 @@ export function createStreamTextWrapper(
 
           if (captureContent) {
               // Explicitly map tool calls to ensure we capture ALL fields including args
-              // (Vercel AI SDK objects may have getters that don't serialize automatically)
+              // AI SDK v5 renamed: args → input, result → output
               const mapToolCall = (tc: any) => ({
                 toolCallId: tc?.toolCallId,
                 toolName: tc?.toolName,
-                args: tc?.args, // The actual arguments passed to the tool!
+                args: tc?.args ?? tc?.input, // v4: args, v5: input
                 type: tc?.type,
               });
 
               const mapToolResult = (tr: any) => ({
                 toolCallId: tr?.toolCallId,
                 toolName: tr?.toolName,
-                result: tr?.result, // The actual result from the tool!
+                result: tr?.result ?? tr?.output, // v4: result, v5: output
                 type: tr?.type,
               });
 
