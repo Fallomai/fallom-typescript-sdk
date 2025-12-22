@@ -1,6 +1,6 @@
 /**
  * Vercel AI SDK streamText wrapper.
- * 
+ *
  * SDK is "dumb" - just captures raw request/response and sends to microservice.
  * All parsing/extraction happens server-side for easier maintenance.
  *
@@ -38,14 +38,19 @@ export function createStreamTextWrapper(
     const captureContent = shouldCaptureContent();
 
     // Track individual tool execution timing by wrapping tool execute functions
-    const toolTimings: Map<string, { name: string; startTime: number; endTime: number; duration: number }> = new Map();
-    
+    const toolTimings: Map<
+      string,
+      { name: string; startTime: number; endTime: number; duration: number }
+    > = new Map();
+
     // Wrap tools to capture execution timing
     let wrappedParams = params;
     if (params.tools && typeof params.tools === "object") {
       const wrappedTools: Record<string, any> = {};
-      
-      for (const [toolName, tool] of Object.entries(params.tools as Record<string, any>)) {
+
+      for (const [toolName, tool] of Object.entries(
+        params.tools as Record<string, any>
+      )) {
         if (tool && typeof tool.execute === "function") {
           const originalExecute = tool.execute;
           wrappedTools[toolName] = {
@@ -53,18 +58,18 @@ export function createStreamTextWrapper(
             execute: async (...executeArgs: any[]) => {
               const toolStartTime = Date.now();
               const toolCallId = `${toolName}-${toolStartTime}`;
-              
+
               try {
                 const result = await originalExecute(...executeArgs);
                 const toolEndTime = Date.now();
-                
+
                 toolTimings.set(toolCallId, {
                   name: toolName,
                   startTime: toolStartTime - startTime,
                   endTime: toolEndTime - startTime,
                   duration: toolEndTime - toolStartTime,
                 });
-                
+
                 return result;
               } catch (error) {
                 const toolEndTime = Date.now();
@@ -82,7 +87,7 @@ export function createStreamTextWrapper(
           wrappedTools[toolName] = tool;
         }
       }
-      
+
       wrappedParams = { ...params, tools: wrappedTools };
     }
 
@@ -123,9 +128,9 @@ export function createStreamTextWrapper(
             steps,
             responseMessages,
           ]) => {
-          const endTime = Date.now();
+            const endTime = Date.now();
 
-          if (debug || isDebugMode()) {
+            if (debug || isDebugMode()) {
               console.log(
                 "\n🔍 [Fallom Debug] streamText raw usage:",
                 JSON.stringify(rawUsage, null, 2)
@@ -142,58 +147,142 @@ export function createStreamTextWrapper(
                 "🔍 [Fallom Debug] streamText toolCalls:",
                 JSON.stringify(toolCalls, null, 2)
               );
+              // Log all keys on first tool call to see what's available
+              if (toolCalls?.[0]) {
+                console.log(
+                  "🔍 [Fallom Debug] streamText toolCalls[0] keys:",
+                  Object.keys(toolCalls[0])
+                );
+                console.log(
+                  "🔍 [Fallom Debug] streamText toolCalls[0] full:",
+                  JSON.stringify(
+                    toolCalls[0],
+                    Object.getOwnPropertyNames(toolCalls[0]),
+                    2
+                  )
+                );
+              }
               console.log(
                 "🔍 [Fallom Debug] streamText steps count:",
                 steps?.length
               );
-          }
+              // Log first step's tool calls (check both v4 and v5 field names)
+              if (steps?.[0]?.toolCalls?.[0]) {
+                const tc = steps[0].toolCalls[0];
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolCalls[0] keys:",
+                  Object.keys(tc)
+                );
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolCalls[0].args (v4):",
+                  tc.args
+                );
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolCalls[0].input (v5):",
+                  tc.input
+                );
+              }
+              // Also check first step's tool results
+              if (steps?.[0]?.toolResults?.[0]) {
+                const tr = steps[0].toolResults[0];
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolResults[0] keys:",
+                  Object.keys(tr)
+                );
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolResults[0].result (v4):",
+                  typeof tr.result === "string"
+                    ? tr.result.slice(0, 200)
+                    : tr.result
+                );
+                console.log(
+                  "🔍 [Fallom Debug] steps[0].toolResults[0].output (v5):",
+                  typeof tr.output === "string"
+                    ? tr.output.slice(0, 200)
+                    : tr.output
+                );
+              }
+            }
 
-          let providerMetadata = result?.experimental_providerMetadata;
+            let providerMetadata = result?.experimental_providerMetadata;
             if (
               providerMetadata &&
               typeof providerMetadata.then === "function"
             ) {
-            try {
-              providerMetadata = await providerMetadata;
-            } catch {
-              providerMetadata = undefined;
+              try {
+                providerMetadata = await providerMetadata;
+              } catch {
+                providerMetadata = undefined;
+              }
             }
-          }
 
             // SDK is dumb - just send ALL raw data, microservice does all parsing
-          const attributes: Record<string, unknown> = {
-            "fallom.sdk_version": "2",
-            "fallom.method": "streamText",
-            "fallom.is_streaming": true,
-          };
+            const attributes: Record<string, unknown> = {
+              "fallom.sdk_version": "2",
+              "fallom.method": "streamText",
+              "fallom.is_streaming": true,
+            };
 
-          if (captureContent) {
-              // Explicitly map tool calls to ensure we capture ALL fields including args
+            if (captureContent) {
+              // Explicitly map tool calls to ensure we capture ALL fields including input/args
               // AI SDK v5 renamed: args → input, result → output
-              const mapToolCall = (tc: any) => ({
-                toolCallId: tc?.toolCallId,
-                toolName: tc?.toolName,
-                args: tc?.args ?? tc?.input, // v4: args, v5: input
-                type: tc?.type,
-              });
+              // We also try to serialize the input by spreading or accessing it explicitly
+              const mapToolCall = (tc: any) => {
+                // Try multiple ways to get the input/args
+                let args = tc?.args ?? tc?.input;
+                // If args is still undefined, try to access all enumerable properties
+                if (args === undefined && tc) {
+                  const {
+                    type,
+                    toolCallId,
+                    toolName,
+                    providerExecuted,
+                    dynamic,
+                    invalid,
+                    error,
+                    providerMetadata,
+                    ...rest
+                  } = tc;
+                  if (Object.keys(rest).length > 0) {
+                    args = rest;
+                  }
+                }
+                return {
+                  toolCallId: tc?.toolCallId,
+                  toolName: tc?.toolName,
+                  args,
+                  type: tc?.type,
+                };
+              };
 
-              const mapToolResult = (tr: any) => ({
-                toolCallId: tr?.toolCallId,
-                toolName: tr?.toolName,
-                result: tr?.result ?? tr?.output, // v4: result, v5: output
-                type: tr?.type,
-              });
+              const mapToolResult = (tr: any) => {
+                // Try multiple ways to get the result/output
+                let result = tr?.result ?? tr?.output;
+                // If result is still undefined, try to access all enumerable properties
+                if (result === undefined && tr) {
+                  const { type, toolCallId, toolName, ...rest } = tr;
+                  if (Object.keys(rest).length > 0) {
+                    result = rest;
+                  }
+                }
+                return {
+                  toolCallId: tr?.toolCallId,
+                  toolName: tr?.toolName,
+                  result,
+                  type: tr?.type,
+                };
+              };
 
               // Send raw request params
-            attributes["fallom.raw.request"] = JSON.stringify({
-              prompt: params?.prompt,
-              messages: params?.messages,
-              system: params?.system,
-              model: modelId,
+              attributes["fallom.raw.request"] = JSON.stringify({
+                prompt: params?.prompt,
+                messages: params?.messages,
+                system: params?.system,
+                model: modelId,
                 tools: params?.tools ? Object.keys(params.tools) : undefined,
                 maxSteps: params?.maxSteps,
-            });
-            
+              });
+
               // Send raw response with explicitly mapped tool data
               attributes["fallom.raw.response"] = JSON.stringify({
                 text: responseText,
@@ -217,145 +306,154 @@ export function createStreamTextWrapper(
                 // Response messages (includes tool call/result messages)
                 responseMessages: responseMessages,
               });
-          }
+            }
 
-          if (rawUsage) {
-            attributes["fallom.raw.usage"] = JSON.stringify(rawUsage);
-          }
-          if (providerMetadata) {
-            attributes["fallom.raw.providerMetadata"] =
-              JSON.stringify(providerMetadata);
-          }
-          if (firstTokenTime) {
-            attributes["fallom.time_to_first_token_ms"] =
-              firstTokenTime - startTime;
-          }
+            if (rawUsage) {
+              attributes["fallom.raw.usage"] = JSON.stringify(rawUsage);
+            }
+            if (providerMetadata) {
+              attributes["fallom.raw.providerMetadata"] =
+                JSON.stringify(providerMetadata);
+            }
+            if (firstTokenTime) {
+              attributes["fallom.time_to_first_token_ms"] =
+                firstTokenTime - startTime;
+            }
 
-          // Send result metadata for debugging (content stripped, keeps provider info)
-          try {
-            attributes["fallom.raw.metadata"] = JSON.stringify(result, sanitizeMetadataOnly);
-          } catch {
-            // Ignore serialization errors
-          }
+            // Send result metadata for debugging (content stripped, keeps provider info)
+            try {
+              attributes["fallom.raw.metadata"] = JSON.stringify(
+                result,
+                sanitizeMetadataOnly
+              );
+            } catch {
+              // Ignore serialization errors
+            }
 
-          // Build waterfall timing data using ACTUAL captured tool execution times
-          const totalDurationMs = endTime - startTime;
-          const sortedToolTimings = Array.from(toolTimings.values()).sort(
-            (a, b) => a.startTime - b.startTime
-          );
-          
-          const waterfallTimings: any = {
-            requestStart: 0,
-            firstTokenTime: firstTokenTime ? firstTokenTime - startTime : undefined,
-            responseEnd: totalDurationMs,
-            totalDurationMs,
-            isStreaming: true,
-            phases: [],
-            toolTimings: sortedToolTimings,
-          };
+            // Build waterfall timing data using ACTUAL captured tool execution times
+            const totalDurationMs = endTime - startTime;
+            const sortedToolTimings = Array.from(toolTimings.values()).sort(
+              (a, b) => a.startTime - b.startTime
+            );
 
-          // Add TTFT as a phase
-          if (firstTokenTime) {
-            waterfallTimings.phases.push({
-              type: "ttft",
-              label: "Time to First Token",
-              startMs: 0,
-              endMs: firstTokenTime - startTime,
-              durationMs: firstTokenTime - startTime,
-              accurate: true,
-            });
-          }
+            const waterfallTimings: any = {
+              requestStart: 0,
+              firstTokenTime: firstTokenTime
+                ? firstTokenTime - startTime
+                : undefined,
+              responseEnd: totalDurationMs,
+              totalDurationMs,
+              isStreaming: true,
+              phases: [],
+              toolTimings: sortedToolTimings,
+            };
 
-          if (sortedToolTimings.length > 0) {
-            // We have REAL measured tool timing data!
-            const firstToolStart = Math.min(...sortedToolTimings.map(t => t.startTime));
-            const lastToolEnd = Math.max(...sortedToolTimings.map(t => t.endTime));
-
-            // Phase 1: LLM deciding on tools
-            if (firstToolStart > 10) {
+            // Add TTFT as a phase
+            if (firstTokenTime) {
               waterfallTimings.phases.push({
-                type: "llm",
-                label: "LLM Call 1 (decides tools)",
+                type: "ttft",
+                label: "Time to First Token",
                 startMs: 0,
-                endMs: firstToolStart,
-                durationMs: firstToolStart,
+                endMs: firstTokenTime - startTime,
+                durationMs: firstTokenTime - startTime,
                 accurate: true,
               });
             }
 
-            // Phase 2: Each tool with its ACTUAL measured timing
-            sortedToolTimings.forEach((toolTiming) => {
-              waterfallTimings.phases.push({
-                type: "tool",
-                label: `${toolTiming.name}()`,
-                startMs: toolTiming.startTime,
-                endMs: toolTiming.endTime,
-                durationMs: toolTiming.duration,
-                accurate: true,
-              });
-            });
+            if (sortedToolTimings.length > 0) {
+              // We have REAL measured tool timing data!
+              const firstToolStart = Math.min(
+                ...sortedToolTimings.map((t) => t.startTime)
+              );
+              const lastToolEnd = Math.max(
+                ...sortedToolTimings.map((t) => t.endTime)
+              );
 
-            // Phase 3: Final LLM response
-            const finalResponseDuration = totalDurationMs - lastToolEnd;
-            if (finalResponseDuration > 10) {
-              waterfallTimings.phases.push({
-                type: "response",
-                label: "LLM Call 2 → Final Response",
-                startMs: lastToolEnd,
-                endMs: totalDurationMs,
-                durationMs: finalResponseDuration,
-                accurate: true,
+              // Phase 1: LLM deciding on tools
+              if (firstToolStart > 10) {
+                waterfallTimings.phases.push({
+                  type: "llm",
+                  label: "LLM Call 1 (decides tools)",
+                  startMs: 0,
+                  endMs: firstToolStart,
+                  durationMs: firstToolStart,
+                  accurate: true,
+                });
+              }
+
+              // Phase 2: Each tool with its ACTUAL measured timing
+              sortedToolTimings.forEach((toolTiming) => {
+                waterfallTimings.phases.push({
+                  type: "tool",
+                  label: `${toolTiming.name}()`,
+                  startMs: toolTiming.startTime,
+                  endMs: toolTiming.endTime,
+                  durationMs: toolTiming.duration,
+                  accurate: true,
+                });
               });
+
+              // Phase 3: Final LLM response
+              const finalResponseDuration = totalDurationMs - lastToolEnd;
+              if (finalResponseDuration > 10) {
+                waterfallTimings.phases.push({
+                  type: "response",
+                  label: "LLM Call 2 → Final Response",
+                  startMs: lastToolEnd,
+                  endMs: totalDurationMs,
+                  durationMs: finalResponseDuration,
+                  accurate: true,
+                });
+              }
             }
-          }
 
-          // Include raw step data
-          if (steps) {
-            waterfallTimings.steps = steps.map((step: any, idx: number) => ({
-              stepIndex: idx,
-              stepType: step?.stepType,
-              finishReason: step?.finishReason,
-              timestamp: step?.response?.timestamp,
-              toolCalls: step?.toolCalls?.map((tc: any) => ({
-                id: tc?.toolCallId,
-                name: tc?.toolName,
-              })),
-              usage: step?.usage,
-            }));
-          }
+            // Include raw step data
+            if (steps) {
+              waterfallTimings.steps = steps.map((step: any, idx: number) => ({
+                stepIndex: idx,
+                stepType: step?.stepType,
+                finishReason: step?.finishReason,
+                timestamp: step?.response?.timestamp,
+                toolCalls: step?.toolCalls?.map((tc: any) => ({
+                  id: tc?.toolCallId,
+                  name: tc?.toolName,
+                })),
+                usage: step?.usage,
+              }));
+            }
 
-          attributes["fallom.raw.timings"] = JSON.stringify(waterfallTimings);
+            attributes["fallom.raw.timings"] = JSON.stringify(waterfallTimings);
 
-          // Get prompt context if set (one-shot, clears after read)
-          const promptCtx = getPromptContext();
+            // Get prompt context if set (one-shot, clears after read)
+            const promptCtx = getPromptContext();
 
-          sendTrace({
-            config_key: ctx.configKey,
-            session_id: ctx.sessionId,
-            customer_id: ctx.customerId,
-            metadata: ctx.metadata,
-            tags: ctx.tags,
-            trace_id: traceId,
-            span_id: spanId,
-            parent_span_id: parentSpanId,
-            name: "streamText",
-            kind: "llm",
-            model: modelId,
-            start_time: new Date(startTime).toISOString(),
-            end_time: new Date(endTime).toISOString(),
-            duration_ms: endTime - startTime,
-            status: "OK",
+            sendTrace({
+              config_key: ctx.configKey,
+              session_id: ctx.sessionId,
+              customer_id: ctx.customerId,
+              metadata: ctx.metadata,
+              tags: ctx.tags,
+              trace_id: traceId,
+              span_id: spanId,
+              parent_span_id: parentSpanId,
+              name: "streamText",
+              kind: "llm",
+              model: modelId,
+              start_time: new Date(startTime).toISOString(),
+              end_time: new Date(endTime).toISOString(),
+              duration_ms: endTime - startTime,
+              status: "OK",
               time_to_first_token_ms: firstTokenTime
                 ? firstTokenTime - startTime
                 : undefined,
-            is_streaming: true,
-            attributes,
+              is_streaming: true,
+              attributes,
               // Prompt context (if prompts.get() or prompts.getAB() was called)
               prompt_key: promptCtx?.promptKey,
               prompt_version: promptCtx?.promptVersion,
               prompt_ab_test_key: promptCtx?.abTestKey,
               prompt_variant_index: promptCtx?.variantIndex,
-          }).catch(() => {});
+            }).catch(() => {});
           }
         )
         .catch((error: any) => {

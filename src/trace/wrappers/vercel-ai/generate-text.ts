@@ -126,21 +126,44 @@ export function createGenerateTextWrapper(
           maxSteps: params?.maxSteps,
         });
 
-        // Explicitly map tool calls to ensure we capture ALL fields including args
+        // Explicitly map tool calls to ensure we capture ALL fields including input/args
         // AI SDK v5 renamed: args → input, result → output
-        const mapToolCall = (tc: any) => ({
-          toolCallId: tc?.toolCallId,
-          toolName: tc?.toolName,
-          args: tc?.args ?? tc?.input, // v4: args, v5: input
-          type: tc?.type,
-        });
+        // We also try to serialize the input by spreading or accessing it explicitly
+        const mapToolCall = (tc: any) => {
+          // Try multiple ways to get the input/args
+          let args = tc?.args ?? tc?.input;
+          // If args is still undefined, try to access all enumerable properties
+          if (args === undefined && tc) {
+            const { type, toolCallId, toolName, providerExecuted, dynamic, invalid, error, providerMetadata, ...rest } = tc;
+            if (Object.keys(rest).length > 0) {
+              args = rest;
+            }
+          }
+          return {
+            toolCallId: tc?.toolCallId,
+            toolName: tc?.toolName,
+            args,
+            type: tc?.type,
+          };
+        };
 
-        const mapToolResult = (tr: any) => ({
-          toolCallId: tr?.toolCallId,
-          toolName: tr?.toolName,
-          result: tr?.result ?? tr?.output, // v4: result, v5: output
-          type: tr?.type,
-        });
+        const mapToolResult = (tr: any) => {
+          // Try multiple ways to get the result/output
+          let result = tr?.result ?? tr?.output;
+          // If result is still undefined, try to access all enumerable properties
+          if (result === undefined && tr) {
+            const { type, toolCallId, toolName, ...rest } = tr;
+            if (Object.keys(rest).length > 0) {
+              result = rest;
+            }
+          }
+          return {
+            toolCallId: tr?.toolCallId,
+            toolName: tr?.toolName,
+            result,
+            type: tr?.type,
+          };
+        };
 
         attributes["fallom.raw.response"] = JSON.stringify({
           text: result?.text,
