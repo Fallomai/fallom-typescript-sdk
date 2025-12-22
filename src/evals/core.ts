@@ -13,6 +13,7 @@ import type {
   CompareModelsOptions,
   ModelResponse,
   MetricName,
+  LLMTestCase,
 } from "./types";
 import { AVAILABLE_METRICS, isCustomMetric, getMetricName } from "./types";
 import { METRIC_PROMPTS, buildGEvalPrompt } from "./prompts";
@@ -170,9 +171,10 @@ async function callModelOpenRouter(
 }
 
 /**
- * Evaluate production outputs against specified metrics using G-Eval.
+ * Evaluate outputs against specified metrics using G-Eval.
  *
  * Results are automatically uploaded to Fallom dashboard.
+ *
  */
 export async function evaluate(
   options: EvaluateOptions
@@ -184,11 +186,25 @@ export async function evaluate(
     name,
     description,
     verbose = true,
+    testCases,
     _skipUpload = false,
   } = options;
 
-  // Resolve dataset - fetch from Fallom if it's a string
-  const dataset = await resolveDataset(datasetInput);
+  // Handle testCases input (convert to DatasetItem format)
+  let dataset: DatasetItem[];
+  if (testCases !== undefined && testCases.length > 0) {
+    dataset = testCases.map((tc: LLMTestCase) => ({
+      input: tc.input,
+      output: tc.actualOutput,
+      systemMessage: tc.systemMessage,
+      metadata: tc.metadata,
+    }));
+  } else if (datasetInput !== undefined) {
+    // Resolve dataset - fetch from Fallom if it's a string
+    dataset = await resolveDataset(datasetInput);
+  } else {
+    throw new Error("Either 'dataset' or 'testCases' must be provided");
+  }
 
   // Validate built-in metrics (custom metrics don't need validation)
   for (const m of metrics) {
@@ -280,6 +296,10 @@ export async function compareModels(
     description,
     verbose = true,
   } = options;
+
+  if (!datasetInput) {
+    throw new Error("'dataset' is required for compareModels()");
+  }
 
   // Resolve dataset - fetch from Fallom if it's a string
   const dataset = await resolveDataset(datasetInput);
