@@ -1,5 +1,7 @@
 /**
- * Core evaluation functions.
+ * Core evaluation functions for Fallom Evals.
+ *
+ * Provides the main API for running LLM evaluations using G-Eval methodology.
  */
 
 import type {
@@ -19,16 +21,30 @@ import { AVAILABLE_METRICS, isCustomMetric, getMetricName } from "./types";
 import { runGEval as runGEvalCore } from "./prompts";
 import { datasetFromFallom } from "./helpers";
 
-// Module state
+// =============================================================================
+// Module State
+// =============================================================================
+
 export let _apiKey: string | null = null;
 export let _baseUrl = "https://app.fallom.com";
 export let _initialized = false;
 
-// Default judge model (via OpenRouter)
+/** Default judge model (via OpenRouter) */
 export const DEFAULT_JUDGE_MODEL = "openai/gpt-4o-mini";
+
+// =============================================================================
+// Initialization
+// =============================================================================
 
 /**
  * Initialize Fallom evals.
+ *
+ * @example
+ * ```typescript
+ * import fallom from "@fallom/trace";
+ *
+ * fallom.evals.init({ apiKey: "your-api-key" });
+ * ```
  */
 export function init(options: InitOptions = {}): void {
   _apiKey = options.apiKey || process.env.FALLOM_API_KEY || null;
@@ -44,9 +60,13 @@ export function init(options: InitOptions = {}): void {
   _initialized = true;
 }
 
+// =============================================================================
+// Internal Helpers
+// =============================================================================
+
 /**
- * Run G-Eval for a single metric using OpenRouter.
- * Wrapper around the core runGEval that handles MetricInput type.
+ * Run G-Eval for a single metric.
+ * Internal wrapper that converts MetricInput to the format expected by runGEvalCore.
  */
 async function runGEval(
   metric: MetricInput,
@@ -55,12 +75,17 @@ async function runGEval(
   systemMessage: string | undefined,
   judgeModel: string
 ): Promise<{ score: number; reasoning: string }> {
-  // Convert MetricInput to the format expected by runGEvalCore
   const metricArg = isCustomMetric(metric)
     ? { name: metric.name, criteria: metric.criteria, steps: metric.steps }
     : metric;
 
-  return runGEvalCore(metricArg, inputText, outputText, systemMessage, judgeModel);
+  return runGEvalCore({
+    metric: metricArg,
+    inputText,
+    outputText,
+    systemMessage,
+    judgeModel,
+  });
 }
 
 /**
@@ -131,11 +156,22 @@ async function callModelOpenRouter(
   };
 }
 
+// =============================================================================
+// Public API
+// =============================================================================
+
 /**
  * Evaluate outputs against specified metrics using G-Eval.
  *
  * Results are automatically uploaded to Fallom dashboard.
  *
+ * @example
+ * ```typescript
+ * const results = await fallom.evals.evaluate({
+ *   dataset: [{ input: "What is 2+2?", output: "4" }],
+ *   metrics: ["answer_relevancy", "faithfulness"],
+ * });
+ * ```
  */
 export async function evaluate(
   options: EvaluateOptions
@@ -171,7 +207,9 @@ export async function evaluate(
   for (const m of metrics) {
     if (typeof m === "string" && !AVAILABLE_METRICS.includes(m as MetricName)) {
       throw new Error(
-        `Invalid metric: ${m}. Available: ${AVAILABLE_METRICS.join(", ")}. Or use CustomMetric for custom metrics.`
+        `Invalid metric: ${m}. Available: ${AVAILABLE_METRICS.join(
+          ", "
+        )}. Or use CustomMetric for custom metrics.`
       );
     }
   }
@@ -226,7 +264,10 @@ export async function evaluate(
     if (_initialized) {
       const runName =
         name ||
-        `Production Eval ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+        `Production Eval ${new Date()
+          .toISOString()
+          .slice(0, 16)
+          .replace("T", " ")}`;
       await uploadResults(results, runName, description, judgeModel, verbose);
     } else if (verbose) {
       console.log(
@@ -383,7 +424,10 @@ export async function compareModels(
   if (_initialized) {
     const runName =
       name ||
-      `Model Comparison ${new Date().toISOString().slice(0, 16).replace("T", " ")}`;
+      `Model Comparison ${new Date()
+        .toISOString()
+        .slice(0, 16)
+        .replace("T", " ")}`;
     await uploadResults(results, runName, description, judgeModel, verbose);
   } else if (verbose) {
     console.log(
@@ -394,8 +438,12 @@ export async function compareModels(
   return results;
 }
 
+// =============================================================================
+// Output Helpers
+// =============================================================================
+
 /**
- * Print evaluation summary.
+ * Print evaluation summary to console.
  */
 function printSummary(results: EvalResult[], metrics: MetricInput[]): void {
   console.log("\n" + "=".repeat(50));
@@ -467,8 +515,12 @@ function printComparisonSummary(
   }
 }
 
+// =============================================================================
+// Upload to Fallom
+// =============================================================================
+
 /**
- * Upload results to Fallom.
+ * Upload results to Fallom dashboard.
  */
 async function uploadResults(
   results: EvalResult[] | Record<string, EvalResult[]>,

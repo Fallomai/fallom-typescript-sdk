@@ -63,6 +63,7 @@ export {
   calculateAggregateScores,
   detectRegression,
   type GEvalScore,
+  type RunGEvalOptions,
 } from "./prompts";
 
 // Core functions

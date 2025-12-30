@@ -137,24 +137,42 @@ export interface GEvalScore {
 }
 
 /**
+ * Options for runGEval function.
+ */
+export interface RunGEvalOptions {
+  /** Built-in metric name or custom metric config */
+  metric: string | { name: string; criteria: string; steps: string[] };
+  /** The user's input/query */
+  inputText: string;
+  /** The LLM's response to evaluate */
+  outputText: string;
+  /** Optional system message for context */
+  systemMessage?: string;
+  /** The model to use as judge (OpenRouter format, e.g., "openai/gpt-4o-mini") */
+  judgeModel: string;
+  /** OpenRouter API key (defaults to OPENROUTER_API_KEY env var) */
+  openrouterKey?: string;
+  /** Optional Fallom API key to enable tracing of the judge LLM call */
+  fallomApiKey?: string;
+}
+
+/**
  * Run G-Eval for a single metric using OpenRouter.
  * This is the low-level function used by both the SDK and backend workers.
  *
- * @param metric - Built-in metric name or custom metric config
- * @param inputText - The user's input/query
- * @param outputText - The LLM's response
- * @param systemMessage - Optional system message
- * @param judgeModel - The model to use as judge (OpenRouter format)
- * @param openrouterKey - OpenRouter API key (defaults to env var)
+ * If `fallomApiKey` is provided, the judge LLM call will be traced to Fallom.
  */
-export async function runGEval(
-  metric: string | { name: string; criteria: string; steps: string[] },
-  inputText: string,
-  outputText: string,
-  systemMessage: string | undefined,
-  judgeModel: string,
-  openrouterKey?: string
-): Promise<GEvalScore> {
+export async function runGEval(options: RunGEvalOptions): Promise<GEvalScore> {
+  const {
+    metric,
+    inputText,
+    outputText,
+    systemMessage,
+    judgeModel,
+    openrouterKey,
+    fallomApiKey,
+  } = options;
+
   const apiKey = openrouterKey || process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -172,6 +190,8 @@ export async function runGEval(
     throw new Error(`Unknown metric: ${metric}`);
   }
 
+  const metricName = typeof metric === "object" ? metric.name : metric;
+
   const prompt = buildGEvalPrompt(
     config.criteria,
     config.steps,
@@ -179,6 +199,8 @@ export async function runGEval(
     inputText,
     outputText
   );
+
+  const startTime = Date.now();
 
   const response = await fetch(
     "https://openrouter.ai/api/v1/chat/completions",
@@ -203,17 +225,121 @@ export async function runGEval(
 
   const data = (await response.json()) as {
     choices: Array<{ message: { content: string } }>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
+
+  const endTime = Date.now();
 
   try {
     const result = JSON.parse(data.choices[0].message.content);
-    return {
-      score: Math.max(0, Math.min(1, result.score)), // Clamp to 0-1
-      reasoning: result.overall_reasoning || "",
-    };
+    const score = Math.max(0, Math.min(1, result.score)); // Clamp to 0-1
+    const reasoning = result.overall_reasoning || "";
+
+    // Send trace to Fallom if API key provided
+    if (fallomApiKey) {
+      sendGEvalTrace({
+        fallomApiKey,
+        metricName,
+        judgeModel,
+        prompt,
+        response: data.choices[0].message.content,
+        score,
+        reasoning,
+        startTime,
+        endTime,
+        usage: data.usage,
+      }).catch(() => {
+        // Silently ignore trace errors - don't affect eval results
+      });
+    }
+
+    return { score, reasoning };
   } catch {
     throw new Error("Failed to parse G-Eval response");
   }
+}
+
+/**
+ * Send a trace for the G-Eval judge call to Fallom.
+ * Fire-and-forget - errors are silently ignored.
+ */
+async function sendGEvalTrace(options: {
+  fallomApiKey: string;
+  metricName: string;
+  judgeModel: string;
+  prompt: string;
+  response: string;
+  score: number;
+  reasoning: string;
+  startTime: number;
+  endTime: number;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+}): Promise<void> {
+  const {
+    fallomApiKey,
+    metricName,
+    judgeModel,
+    prompt,
+    response,
+    score,
+    reasoning,
+    startTime,
+    endTime,
+    usage,
+  } = options;
+
+  const traceUrl = process.env.FALLOM_TRACES_URL || "https://traces.fallom.com";
+
+  const traceData = {
+    config_key: "eval-worker",
+    session_id: `geval-${Date.now()}`,
+    trace_id: generateHexId(32),
+    span_id: generateHexId(16),
+    name: `geval.${metricName}`,
+    kind: "llm",
+    model: judgeModel,
+    start_time: new Date(startTime).toISOString(),
+    end_time: new Date(endTime).toISOString(),
+    duration_ms: endTime - startTime,
+    status: "OK",
+    metadata: {
+      metric: metricName,
+      score,
+    },
+    tags: ["eval-worker", "geval", metricName],
+    attributes: {
+      "fallom.sdk_version": "2",
+      "fallom.method": "runGEval",
+      "geval.metric": metricName,
+      "geval.score": score,
+      "geval.reasoning": reasoning,
+      "gen_ai.prompt.0.role": "user",
+      "gen_ai.prompt.0.content": prompt,
+      "gen_ai.completion.0.content": response,
+      "gen_ai.usage.prompt_tokens": usage?.prompt_tokens,
+      "gen_ai.usage.completion_tokens": usage?.completion_tokens,
+    },
+  };
+
+  await fetch(`${traceUrl}/v1/traces`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${fallomApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(traceData),
+  });
+}
+
+/**
+ * Generate a random hex ID.
+ */
+function generateHexId(length: number): string {
+  const bytes = new Uint8Array(length / 2);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 /**
