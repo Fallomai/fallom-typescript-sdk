@@ -40,7 +40,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/fallom/fallom-js"
+    "url": "https://github.com/Fallomai/fallom-typescript-sdk"
   },
   "dependencies": {
     "@opentelemetry/api": "^1.7.0",
