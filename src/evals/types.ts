@@ -54,6 +54,12 @@ export interface EvalResult {
   input: string;
   output: string;
   systemMessage?: string;
+  /** Expected/golden output for comparison (if provided) */
+  expectedOutput?: string;
+  /** Retrieved documents/context for RAG evaluation */
+  context?: string[];
+  /** Additional metadata */
+  metadata?: Record<string, unknown>;
   model: string;
   isProduction: boolean;
   answerRelevancy?: number;
@@ -86,7 +92,7 @@ export interface Golden {
 
 /**
  * A test case for evaluation - contains input and actual output from your LLM.
- * 
+ *
  */
 export interface LLMTestCase {
   /** The user input/query */
@@ -171,4 +177,3 @@ export function isCustomMetric(metric: MetricInput): metric is CustomMetric {
 export function getMetricName(metric: MetricInput): string {
   return isCustomMetric(metric) ? metric.name : metric;
 }
-

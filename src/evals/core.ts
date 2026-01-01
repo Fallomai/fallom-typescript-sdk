@@ -187,15 +187,30 @@ export async function evaluate(
     _skipUpload = false,
   } = options;
 
-  // Handle testCases input (convert to DatasetItem format)
+  // Handle testCases input (convert to DatasetItem format with extra fields)
   let dataset: DatasetItem[];
+  // Store extra fields from testCases that DatasetItem doesn't have
+  let testCaseExtras: Map<
+    number,
+    { expectedOutput?: string; context?: string[] }
+  > = new Map();
+
   if (testCases !== undefined && testCases.length > 0) {
-    dataset = testCases.map((tc: LLMTestCase) => ({
-      input: tc.input,
-      output: tc.actualOutput,
-      systemMessage: tc.systemMessage,
-      metadata: tc.metadata,
-    }));
+    dataset = testCases.map((tc: LLMTestCase, idx: number) => {
+      // Store extra fields for later use
+      if (tc.expectedOutput || tc.context) {
+        testCaseExtras.set(idx, {
+          expectedOutput: tc.expectedOutput,
+          context: tc.context,
+        });
+      }
+      return {
+        input: tc.input,
+        output: tc.actualOutput,
+        systemMessage: tc.systemMessage,
+        metadata: tc.metadata,
+      };
+    });
   } else if (datasetInput !== undefined) {
     // Resolve dataset - fetch from Fallom if it's a string
     dataset = await resolveDataset(datasetInput);
@@ -220,10 +235,16 @@ export async function evaluate(
     const item = dataset[i];
     if (verbose) console.log(`Evaluating item ${i + 1}/${dataset.length}...`);
 
+    // Get extra fields from testCases if available
+    const extras = testCaseExtras.get(i);
+
     const result: EvalResult = {
       input: item.input,
       output: item.output,
       systemMessage: item.systemMessage,
+      expectedOutput: extras?.expectedOutput,
+      context: extras?.context,
+      metadata: item.metadata,
       model: "production",
       isProduction: true,
       reasoning: {},
@@ -367,6 +388,7 @@ export async function compareModels(
           input: item.input,
           output,
           systemMessage: item.systemMessage,
+          metadata: item.metadata,
           model: model.name,
           isProduction: false,
           reasoning: {},
@@ -547,6 +569,9 @@ async function uploadResults(
     results: allResults.map((r) => ({
       input: r.input,
       system_message: r.systemMessage,
+      expected_output: r.expectedOutput,
+      context: r.context,
+      metadata: r.metadata,
       model: r.model,
       output: r.output,
       is_production: r.isProduction,
