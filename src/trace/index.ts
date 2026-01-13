@@ -18,3 +18,7 @@ export { init, shutdown } from "./core";
 
 // Session - the main API
 export { FallomSession, session } from "./session";
+
+// Manual spans
+export { FallomSpan, wrapTraced } from "./span";
+export type { SpanOptions } from "./span";

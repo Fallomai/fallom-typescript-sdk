@@ -10,6 +10,7 @@ import {
   sendTrace,
 } from "./core";
 import { generateHexId } from "./utils";
+import { FallomSpan, type SpanOptions } from "./span";
 import type { SessionContext, SessionOptions, WrapAISDKOptions } from "./types";
 
 // Import wrappers
@@ -58,6 +59,27 @@ export class FallomSession {
   /** Get the session context. */
   getContext(): SessionContext {
     return { ...this.ctx };
+  }
+
+  /**
+   * Create a manual span for custom operations.
+   *
+   * Use for non-LLM operations like RAG retrieval, preprocessing, tool execution, etc.
+   * The span uses the session's context (configKey, sessionId, etc.).
+   *
+   * @example
+   * ```typescript
+   * const span = session.span("rag.retrieve");
+   * span.set({ "rag.query": userQuery, "rag.topK": 5 });
+   *
+   * const docs = await retrieveDocuments(userQuery);
+   * span.set({ "rag.documents.count": docs.length });
+   *
+   * span.end(); // Must call to send the span
+   * ```
+   */
+  span(name: string, options?: SpanOptions): FallomSpan {
+    return new FallomSpan(name, this.ctx, options);
   }
 
   /**

@@ -63,8 +63,8 @@ export {
 } from "./evals";
 
 // Session-scoped tracing exports
-export { session, FallomSession } from "./trace";
-export type { SessionOptions, SessionContext } from "./trace";
+export { session, FallomSession, FallomSpan, wrapTraced } from "./trace";
+export type { SessionOptions, SessionContext, SpanOptions } from "./trace";
 
 // Mastra integration
 export {
