@@ -148,6 +148,12 @@ export interface EvaluateOptions {
   /** List of metrics to run (built-in or custom). Default: all built-in metrics */
   metrics?: MetricInput[];
   judgeModel?: string;
+  /**
+   * Context to provide the LLM judge about the product/domain being evaluated.
+   * This helps the judge make better evaluations by understanding what features
+   * or capabilities are valid (e.g., won't mark valid features as hallucinations).
+   */
+  judgeContext?: string;
   name?: string;
   description?: string;
   verbose?: boolean;

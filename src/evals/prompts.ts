@@ -96,12 +96,22 @@ export function buildGEvalPrompt(
   steps: string[],
   systemMessage: string | undefined,
   inputText: string,
-  outputText: string
+  outputText: string,
+  judgeContext?: string
 ): string {
   const stepsText = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
 
   return `You are an expert evaluator assessing LLM outputs using the G-Eval methodology.
+${
+  judgeContext
+    ? `
+## Important Context
+The following context provides background information about the product/domain being evaluated. Use this to inform your evaluation - for example, if the context mentions that certain features or capabilities exist, do not mark responses as hallucinations when they reference those features.
 
+${judgeContext}
+`
+    : ""
+}
 ## Evaluation Criteria
 ${criteria}
 
@@ -160,6 +170,8 @@ export interface RunGEvalOptions {
   traceSessionId?: string;
   /** Optional customer ID for tracing (e.g., organization ID) */
   traceCustomerId?: string;
+  /** Optional context to provide the judge about the product/domain being evaluated */
+  judgeContext?: string;
 }
 
 /**
@@ -179,6 +191,7 @@ export async function runGEval(options: RunGEvalOptions): Promise<GEvalScore> {
     fallomApiKey,
     traceSessionId,
     traceCustomerId,
+    judgeContext,
   } = options;
 
   const apiKey = openrouterKey || process.env.OPENROUTER_API_KEY;
@@ -205,7 +218,8 @@ export async function runGEval(options: RunGEvalOptions): Promise<GEvalScore> {
     config.steps,
     systemMessage,
     inputText,
-    outputText
+    outputText,
+    judgeContext
   );
 
   const startTime = Date.now();

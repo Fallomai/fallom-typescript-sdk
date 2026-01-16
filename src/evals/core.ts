@@ -73,7 +73,8 @@ async function runGEval(
   inputText: string,
   outputText: string,
   systemMessage: string | undefined,
-  judgeModel: string
+  judgeModel: string,
+  judgeContext?: string
 ): Promise<{ score: number; reasoning: string }> {
   const metricArg = isCustomMetric(metric)
     ? { name: metric.name, criteria: metric.criteria, steps: metric.steps }
@@ -85,6 +86,7 @@ async function runGEval(
     outputText,
     systemMessage,
     judgeModel,
+    judgeContext,
   });
 }
 
@@ -180,6 +182,7 @@ export async function evaluate(
     dataset: datasetInput,
     metrics = [...AVAILABLE_METRICS],
     judgeModel = DEFAULT_JUDGE_MODEL,
+    judgeContext,
     name,
     description,
     verbose = true,
@@ -260,7 +263,8 @@ export async function evaluate(
           item.input,
           item.output,
           item.systemMessage,
-          judgeModel
+          judgeModel,
+          judgeContext
         );
 
         // Set score using camelCase key (for built-in) or metric name (for custom)
@@ -313,6 +317,7 @@ export async function compareModels(
     models,
     metrics = [...AVAILABLE_METRICS],
     judgeModel = DEFAULT_JUDGE_MODEL,
+    judgeContext,
     includeProduction = true,
     modelKwargs = {},
     name,
@@ -336,6 +341,7 @@ export async function compareModels(
       dataset,
       metrics,
       judgeModel,
+      judgeContext,
       verbose,
       _skipUpload: true,
     });
@@ -409,7 +415,8 @@ export async function compareModels(
               item.input,
               output,
               item.systemMessage,
-              judgeModel
+              judgeModel,
+              judgeContext
             );
 
             const key = isCustomMetric(metric)
